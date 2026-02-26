@@ -40,6 +40,7 @@ class MeetupProvider:
             ProviderCapability.CREATE_VENUE,
             ProviderCapability.NETWORK_SEARCH,
             ProviderCapability.USER_PROFILE,
+            ProviderCapability.LIST_MEMBERS,
         }
 
     @property
@@ -69,6 +70,27 @@ class MeetupProvider:
     async def list_my_groups(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.LIST_MY_GROUPS, kwargs)
         return data["self"]["memberships"]
+
+    # ------------------------------------------------------------------
+    # Members
+    # ------------------------------------------------------------------
+
+    async def list_group_members(self, urlname: str, **kwargs: Any) -> dict[str, Any]:
+        variables: dict[str, Any] = {"urlname": urlname, **kwargs}
+        data = await self._client.execute(queries.GROUP_MEMBERS, variables)
+        return data["groupByUrlname"]["memberships"]
+
+    async def get_group_member(self, urlname: str, member_id: str) -> dict[str, Any]:
+        variables = {"urlname": urlname, "memberIds": [member_id]}
+        data = await self._client.execute(queries.GROUP_MEMBER_BY_ID, variables)
+        edges = data["groupByUrlname"]["memberships"]["edges"]
+        if not edges:
+            from pulumi_events.exceptions import ProviderError
+
+            msg = f"Member {member_id} not found in group {urlname}"
+            raise ProviderError(msg)
+        edge = edges[0]
+        return {**edge["node"], "membership": edge["metadata"]}
 
     # ------------------------------------------------------------------
     # Events

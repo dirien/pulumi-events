@@ -134,6 +134,7 @@ import pulumi_events.resources.meetup_resources as _mres  # noqa: E402
 import pulumi_events.tools.event_tools as _evt  # noqa: E402
 import pulumi_events.tools.group_tools as _grp  # noqa: E402
 import pulumi_events.tools.luma_tools as _ltools  # noqa: E402
+import pulumi_events.tools.member_tools as _mem  # noqa: E402
 import pulumi_events.tools.platform_tools as _plt  # noqa: E402
 import pulumi_events.tools.search_tools as _src  # noqa: E402
 import pulumi_events.tools.venue_tools as _ven  # noqa: E402
@@ -145,6 +146,7 @@ __all__ = [  # keep side-effect imports from being flagged as unused
     "_evt",
     "_grp",
     "_ltools",
+    "_mem",
     "_plt",
     "_src",
     "_ven",

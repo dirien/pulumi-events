@@ -183,6 +183,32 @@ async def luma_cancel_event(
 @mcp.tool(
     annotations={"readOnlyHint": True},
 )
+async def luma_list_people(
+    ctx: Context,
+    after: str | None = None,
+    limit: int | None = None,
+    provider: LumaProvider = Depends(get_luma_provider),
+) -> dict[str, Any]:
+    """List all people from your Luma calendar.
+
+    Returns contacts with their name, email, event attendance count, and tags.
+
+    Args:
+        after: Pagination cursor from a previous response.
+        limit: Maximum number of people to return.
+    """
+    await ctx.info("Fetching Luma people...")
+    try:
+        return await provider.list_people(after=after, limit=limit)
+    except ProviderError as exc:
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(str(exc)) from exc
+
+
+@mcp.tool(
+    annotations={"readOnlyHint": True},
+)
 async def luma_list_guests(
     event_id: str,
     ctx: Context,

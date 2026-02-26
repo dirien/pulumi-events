@@ -6,7 +6,7 @@ Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API
 
 ## Features
 
-- **15 tools** across two platforms (Meetup + Luma)
+- **18 tools** across two platforms (Meetup + Luma)
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
 - Meetup: OAuth2 authentication with automatic token caching and refresh
 - Luma: API key authentication
@@ -57,6 +57,8 @@ Then add to your Claude Code MCP config:
 | `meetup_edit_event` | Edit an existing event |
 | `meetup_event_action` | Delete, publish, announce, or manage RSVPs |
 | `meetup_network_search` | Search within a Pro network |
+| `meetup_list_group_members` | List members of a group with roles and join dates |
+| `meetup_get_member` | Get details of a specific member in a group |
 | `meetup_create_venue` | Create a venue for events |
 
 ### Luma
@@ -67,6 +69,7 @@ Then add to your Claude Code MCP config:
 | `luma_create_event` | Create a Luma event |
 | `luma_update_event` | Update a Luma event |
 | `luma_cancel_event` | Cancel a Luma event |
+| `luma_list_people` | List all people from your Luma calendar |
 | `luma_list_guests` | List guests for a Luma event |
 
 ## Resources
@@ -120,6 +123,7 @@ src/pulumi_events/
 │   ├── platform_tools.py  # list_platforms, meetup_login
 │   ├── event_tools.py     # Meetup event mutations
 │   ├── group_tools.py     # Meetup group tools
+│   ├── member_tools.py    # Meetup member tools
 │   ├── search_tools.py    # Meetup search tools
 │   ├── venue_tools.py     # Meetup venue tools
 │   └── luma_tools.py      # Luma event + guest tools

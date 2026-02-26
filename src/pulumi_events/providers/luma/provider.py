@@ -33,6 +33,7 @@ class LumaProvider:
             ProviderCapability.CANCEL_EVENT,
             ProviderCapability.LIST_GUESTS,
             ProviderCapability.USER_PROFILE,
+            ProviderCapability.LIST_PEOPLE,
         }
 
     @property
@@ -84,6 +85,24 @@ class LumaProvider:
 
     async def cancel_event(self, event_id: str) -> dict[str, Any]:
         return await self._client.post("/event/cancel", {"event_id": event_id})
+
+    # ------------------------------------------------------------------
+    # People
+    # ------------------------------------------------------------------
+
+    async def list_people(
+        self,
+        *,
+        after: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """List all people from the authenticated user's calendar."""
+        params: dict[str, Any] = {}
+        if after is not None:
+            params["pagination_cursor"] = after
+        if limit is not None:
+            params["limit"] = limit
+        return await self._client.get("/calendar/list-people", params or None)
 
     # ------------------------------------------------------------------
     # Guests

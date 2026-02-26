@@ -26,6 +26,8 @@ class ProviderCapability(enum.Enum):
     LIST_EVENTS = "list_events"
     LIST_GUESTS = "list_guests"
     CANCEL_EVENT = "cancel_event"
+    LIST_MEMBERS = "list_members"
+    LIST_PEOPLE = "list_people"
 
 
 @runtime_checkable

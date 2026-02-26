@@ -10,6 +10,8 @@ __all__ = [
     "DELETE_EVENT",
     "EVENT_BY_ID",
     "GROUP_BY_URLNAME",
+    "GROUP_MEMBERS",
+    "GROUP_MEMBER_BY_ID",
     "LIST_MY_GROUPS",
     "NETWORK_BY_URLNAME",
     "NETWORK_SEARCH_EVENTS",
@@ -278,6 +280,79 @@ query($urlname: String!, $query: String, $first: Int, $after: String) {
       edges {
         node {
           id name
+        }
+      }
+    }
+  }
+}
+"""
+
+GROUP_MEMBERS = """
+query(
+  $urlname: String!,
+  $first: Int,
+  $after: String,
+  $status: [MembershipStatus!],
+  $sort: GroupMembershipSortInput
+) {
+  groupByUrlname(urlname: $urlname) {
+    memberships(first: $first, after: $after, filter: { status: $status }, sort: $sort) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          name
+          bio
+          city
+          country
+          memberUrl
+          username
+          isOrganizer
+          memberPhoto {
+            baseUrl
+          }
+        }
+        metadata {
+          role
+          joinTime
+          status
+          bio
+          lastAccessTime
+        }
+      }
+    }
+  }
+}
+"""
+
+GROUP_MEMBER_BY_ID = """
+query($urlname: String!, $memberIds: [ID!]) {
+  groupByUrlname(urlname: $urlname) {
+    memberships(filter: { memberIds: $memberIds }) {
+      edges {
+        node {
+          id
+          name
+          bio
+          city
+          country
+          memberUrl
+          username
+          isOrganizer
+          memberPhoto {
+            baseUrl
+          }
+        }
+        metadata {
+          role
+          joinTime
+          status
+          bio
+          lastAccessTime
         }
       }
     }

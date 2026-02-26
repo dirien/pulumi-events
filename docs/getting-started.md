@@ -108,12 +108,15 @@ List my Meetup groups
 Search for Pulumi events on Meetup
 Create a draft event in berlin-pulumi-user-group
 Read meetup://group/berlin-pulumi-user-group
+List members of berlin-pulumi-user-group
+Get details of member 12345 in berlin-pulumi-user-group
 
 # Luma
 List my Luma events
 Read luma://self
 Create a Luma event called "Demo Night" on March 15
 List guests for luma event evt-abc123
+List all people in my Luma calendar
 ```
 
 ## Configuration Reference
