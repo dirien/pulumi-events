@@ -1,16 +1,17 @@
 # pulumi-events
 
-MCP server for managing events on Meetup.com (and later Luma) via AI assistants like Claude.
+MCP server for managing events on Meetup.com and Luma via AI assistants like Claude.
 
-Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API as MCP tools and resources so LLMs can search events, manage groups, create and publish events, and more.
+Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API and Luma's REST API as MCP tools and resources so LLMs can search events, manage groups, create and publish events, and more.
 
 ## Features
 
-- **10 tools** for searching, creating, editing, and managing Meetup events, groups, venues, and Pro networks
-- **4 resources** for read-only lookups (user profile, group details, event details, network info)
-- OAuth2 authentication with automatic token caching and refresh
+- **15 tools** across two platforms (Meetup + Luma)
+- **6 resources** for read-only lookups (user profiles, group/event/network details)
+- Meetup: OAuth2 authentication with automatic token caching and refresh
+- Luma: API key authentication
 - Streamable HTTP transport for production use
-- Provider architecture ready for additional platforms (Luma, etc.)
+- Provider architecture for easy addition of new platforms
 
 ## Quick Start
 
@@ -43,9 +44,11 @@ Then add to your Claude Code MCP config:
 
 ## Tools
 
+### Meetup
+
 | Tool | Description |
 |------|-------------|
-| `list_platforms` | List configured platforms with auth status |
+| `list_platforms` | List all configured platforms with auth status |
 | `meetup_login` | Start Meetup OAuth2 login flow |
 | `meetup_search_events` | Search events with filters (location, date, type) |
 | `meetup_search_groups` | Search groups by keyword and location |
@@ -56,14 +59,26 @@ Then add to your Claude Code MCP config:
 | `meetup_network_search` | Search within a Pro network |
 | `meetup_create_venue` | Create a venue for events |
 
+### Luma
+
+| Tool | Description |
+|------|-------------|
+| `luma_list_events` | List events from your Luma calendar |
+| `luma_create_event` | Create a Luma event |
+| `luma_update_event` | Update a Luma event |
+| `luma_cancel_event` | Cancel a Luma event |
+| `luma_list_guests` | List guests for a Luma event |
+
 ## Resources
 
 | URI | Description |
 |-----|-------------|
-| `meetup://self` | Authenticated user profile |
-| `meetup://group/{urlname}` | Group details by URL name |
-| `meetup://event/{event_id}` | Event details by ID |
-| `meetup://network/{urlname}` | Pro network info |
+| `meetup://self` | Authenticated Meetup user profile |
+| `meetup://group/{urlname}` | Meetup group details by URL name |
+| `meetup://event/{event_id}` | Meetup event details by ID |
+| `meetup://network/{urlname}` | Meetup Pro network info |
+| `luma://self` | Authenticated Luma user profile |
+| `luma://event/{event_id}` | Luma event details by API ID |
 
 ## Configuration
 
@@ -73,6 +88,7 @@ All settings are loaded from environment variables with the `PULUMI_EVENTS_` pre
 |----------|---------|-------------|
 | `PULUMI_EVENTS_MEETUP_CLIENT_ID` | — | Meetup OAuth2 client ID |
 | `PULUMI_EVENTS_MEETUP_CLIENT_SECRET` | — | Meetup OAuth2 client secret |
+| `PULUMI_EVENTS_LUMA_API_KEY` | — | Luma API key (requires Luma Plus) |
 | `PULUMI_EVENTS_SERVER_HOST` | `127.0.0.1` | Server bind address |
 | `PULUMI_EVENTS_SERVER_PORT` | `8080` | Server port |
 | `PULUMI_EVENTS_MEETUP_REDIRECT_URI` | `http://127-0-0-1.nip.io:8080/auth/meetup/callback` | OAuth2 redirect URI |
@@ -86,36 +102,40 @@ src/pulumi_events/
 ├── settings.py            # Pydantic Settings configuration
 ├── exceptions.py          # Exception hierarchy
 ├── auth/
-│   ├── oauth.py           # OAuth2 flow helpers
+│   ├── oauth.py           # OAuth2 flow helpers (Meetup)
 │   └── token_store.py     # Token persistence + auto-refresh
 ├── providers/
-│   ├── base.py            # EventProvider protocol
+│   ├── base.py            # EventProvider protocol + capabilities
 │   ├── registry.py        # Provider registry
-│   └── meetup/
-│       ├── client.py      # GraphQL client with auto token refresh
-│       ├── provider.py    # MeetupProvider implementation
-│       ├── queries.py     # GraphQL query/mutation strings
-│       └── models.py      # Pydantic response models
-├── tools/                 # MCP tool definitions
+│   ├── meetup/
+│   │   ├── client.py      # GraphQL client with auto token refresh
+│   │   ├── provider.py    # MeetupProvider implementation
+│   │   ├── queries.py     # GraphQL query/mutation strings
+│   │   └── models.py      # Pydantic response models
+│   └── luma/
+│       ├── client.py      # REST client for Luma public API
+│       └── provider.py    # LumaProvider implementation
+├── tools/
 │   ├── _deps.py           # Shared dependency factories
-│   ├── platform_tools.py
-│   ├── event_tools.py
-│   ├── group_tools.py
-│   ├── search_tools.py
-│   └── venue_tools.py
+│   ├── platform_tools.py  # list_platforms, meetup_login
+│   ├── event_tools.py     # Meetup event mutations
+│   ├── group_tools.py     # Meetup group tools
+│   ├── search_tools.py    # Meetup search tools
+│   ├── venue_tools.py     # Meetup venue tools
+│   └── luma_tools.py      # Luma event + guest tools
 └── resources/
-    └── meetup_resources.py  # MCP resource templates
+    ├── meetup_resources.py
+    └── luma_resources.py
 ```
 
 ## Development
 
 ```bash
-# Lint and format
-uv run ruff check src/
-uv run ruff format src/
-
-# Run the server
-uv run pulumi-events
+make help       # Show all targets
+make check      # Lint + format check
+make format     # Auto-format
+make test       # Run tests
+make run        # Start the server
 ```
 
 ## License

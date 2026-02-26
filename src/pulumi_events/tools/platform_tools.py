@@ -8,10 +8,11 @@ from fastmcp.dependencies import Depends
 from fastmcp.server.context import Context
 
 from pulumi_events.auth.oauth import build_auth_url
+from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.server import mcp
 from pulumi_events.settings import Settings
-from pulumi_events.tools._deps import get_meetup_provider, get_settings
+from pulumi_events.tools._deps import get_luma_provider, get_meetup_provider, get_settings
 
 __all__: list[str] = []
 
@@ -20,18 +21,20 @@ __all__: list[str] = []
     annotations={"readOnlyHint": True},
 )
 async def list_platforms(
-    provider: MeetupProvider = Depends(get_meetup_provider),
+    meetup: MeetupProvider = Depends(get_meetup_provider),
+    luma: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """List configured event platforms with their authentication status and capabilities."""
-    return {
-        "platforms": [
+    platforms = []
+    for provider in (meetup, luma):
+        platforms.append(
             {
                 "name": provider.name,
                 "authenticated": provider.is_authenticated,
                 "capabilities": sorted(c.value for c in provider.capabilities),
             }
-        ]
-    }
+        )
+    return {"platforms": platforms}
 
 
 @mcp.tool()

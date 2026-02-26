@@ -14,6 +14,8 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from pulumi_events.auth.oauth import exchange_code
 from pulumi_events.auth.token_store import TokenStore
+from pulumi_events.providers.luma.client import LumaClient
+from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.providers.meetup.client import MeetupGraphQLClient
 from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.providers.registry import ProviderRegistry
@@ -39,19 +41,27 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     _token_store = token_store
 
     async with httpx.AsyncClient(timeout=30.0) as http:
-        client = MeetupGraphQLClient(http, token_store, settings)
-        provider = MeetupProvider(client)
+        meetup_client = MeetupGraphQLClient(http, token_store, settings)
+        meetup_provider = MeetupProvider(meetup_client)
+
+        luma_client = LumaClient(http, settings)
+        luma_provider = LumaProvider(luma_client)
 
         registry = ProviderRegistry()
-        registry.register(provider)
+        registry.register(meetup_provider)
+        registry.register(luma_provider)
 
         logger.info(
-            "pulumi-events server ready (meetup auth=%s)",
-            provider.is_authenticated,
+            "pulumi-events server ready (meetup auth=%s, luma auth=%s)",
+            meetup_provider.is_authenticated,
+            luma_provider.is_authenticated,
         )
 
         yield {
-            "providers": {"meetup": provider},
+            "providers": {
+                "meetup": meetup_provider,
+                "luma": luma_provider,
+            },
             "registry": registry,
             "settings": settings,
             "token_store": token_store,
@@ -61,11 +71,12 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
 mcp = FastMCP(
     "pulumi-events",
     instructions=(
-        "MCP server for managing events on Meetup.com. "
-        "Use meetup_login to authenticate, then use tools to "
-        "search/create/manage events and groups. "
-        "Read-only lookups are available as resources "
-        "(meetup://self, meetup://group/{urlname}, etc.)."
+        "MCP server for managing events on Meetup.com and Luma. "
+        "Use meetup_login to authenticate with Meetup. "
+        "Luma uses an API key (pre-configured). "
+        "Tools prefixed with meetup_ or luma_ target each platform. "
+        "Resources: meetup://self, meetup://group/{urlname}, "
+        "luma://self, luma://event/{event_id}, etc."
     ),
     lifespan=app_lifespan,
 )
@@ -118,18 +129,22 @@ async def health(_request: Request) -> Response:
 # Import tool and resource modules to trigger @mcp.tool / @mcp.resource
 # registration. These must come AFTER mcp is defined to avoid circular imports.
 # ---------------------------------------------------------------------------
-import pulumi_events.resources.meetup_resources as _res  # noqa: E402
+import pulumi_events.resources.luma_resources as _lres  # noqa: E402
+import pulumi_events.resources.meetup_resources as _mres  # noqa: E402
 import pulumi_events.tools.event_tools as _evt  # noqa: E402
 import pulumi_events.tools.group_tools as _grp  # noqa: E402
+import pulumi_events.tools.luma_tools as _ltools  # noqa: E402
 import pulumi_events.tools.platform_tools as _plt  # noqa: E402
 import pulumi_events.tools.search_tools as _src  # noqa: E402
 import pulumi_events.tools.venue_tools as _ven  # noqa: E402
 
 __all__ = [  # keep side-effect imports from being flagged as unused
     "mcp",
-    "_res",
+    "_lres",
+    "_mres",
     "_evt",
     "_grp",
+    "_ltools",
     "_plt",
     "_src",
     "_ven",

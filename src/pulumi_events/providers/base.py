@@ -23,6 +23,9 @@ class ProviderCapability(enum.Enum):
     CREATE_VENUE = "create_venue"
     NETWORK_SEARCH = "network_search"
     USER_PROFILE = "user_profile"
+    LIST_EVENTS = "list_events"
+    LIST_GUESTS = "list_guests"
+    CANCEL_EVENT = "cancel_event"
 
 
 @runtime_checkable
