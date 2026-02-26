@@ -41,16 +41,12 @@ class MeetupGraphQLClient:
     def is_authenticated(self) -> bool:
         return self._token_store.is_authenticated
 
-    def _is_local(self) -> bool:
-        host = self._settings.server_host
-        return host in ("127.0.0.1", "localhost", "0.0.0.0")  # noqa: S104
-
     async def _ensure_authenticated(self) -> str:
-        """Return a valid access token, auto-triggering login if local."""
+        """Return a valid access token, auto-opening browser if configured."""
         try:
             return await self._token_store.get_access_token(self._http)
         except AuthenticationError:
-            if not self._is_local():
+            if not self._settings.auto_open_browser:
                 raise
 
         # Local mode — open browser and wait for OAuth callback
