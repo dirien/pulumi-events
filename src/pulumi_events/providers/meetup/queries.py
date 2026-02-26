@@ -50,14 +50,14 @@ query($urlname: String!) {
     description
     city
     country
-    latitude
-    longitude
+    lat
+    lon
     memberships {
       totalCount
     }
     link
     timezone
-    logo {
+    keyGroupPhoto {
       baseUrl
     }
   }
@@ -75,12 +75,11 @@ query($eventId: ID!) {
     endTime
     eventUrl
     status
-    going
     maxTickets
     rsvpSettings {
       rsvpOpenTime
       rsvpCloseTime
-      rsvpLimit
+      rsvpsClosed
     }
     venue {
       id
@@ -90,33 +89,35 @@ query($eventId: ID!) {
       state
       country
       lat
-      lng
+      lon
     }
     group {
       id
       name
       urlname
     }
-    hosts {
-      id
+    eventHosts {
       name
+      member {
+        id
+      }
     }
   }
 }
 """
 
 NETWORK_BY_URLNAME = """
-query($urlname: String!) {
-  proNetworkByUrlname(urlname: $urlname) {
+query($urlname: ID!) {
+  proNetwork(urlname: $urlname) {
     id
     name
     urlname
     description
-    groupCount
-    memberCount
+    status
     logo {
       baseUrl
     }
+    link
   }
 }
 """
@@ -149,26 +150,14 @@ query($first: Int, $after: String) {
 
 SEARCH_EVENTS = """
 query(
-  $query: String!,
+  $filter: EventSearchFilter!,
   $first: Int,
-  $after: String,
-  $lat: Float,
-  $lon: Float,
-  $startDateRange: ZonedDateTime,
-  $endDateRange: ZonedDateTime,
-  $eventType: EventType
+  $after: String
 ) {
-  searchEvents(
-    input: {
-      query: $query,
-      first: $first,
-      after: $after,
-      lat: $lat,
-      lon: $lon,
-      startDateRange: $startDateRange,
-      endDateRange: $endDateRange,
-      eventType: $eventType
-    }
+  eventSearch(
+    filter: $filter,
+    first: $first,
+    after: $after
   ) {
     totalCount
     pageInfo {
@@ -181,8 +170,8 @@ query(
         title
         dateTime
         duration
-        going
         eventUrl
+        status
         group {
           name
           urlname
@@ -199,15 +188,15 @@ query(
 """
 
 SEARCH_GROUPS = """
-query($query: String!, $first: Int, $after: String, $lat: Float, $lon: Float) {
-  searchGroups(
-    input: {
-      query: $query,
-      first: $first,
-      after: $after,
-      lat: $lat,
-      lon: $lon
-    }
+query(
+  $filter: GroupSearchFilter!,
+  $first: Int,
+  $after: String
+) {
+  groupSearch(
+    filter: $filter,
+    first: $first,
+    after: $after
   ) {
     totalCount
     pageInfo {
@@ -233,19 +222,18 @@ query($query: String!, $first: Int, $after: String, $lat: Float, $lon: Float) {
 
 NETWORK_SEARCH_EVENTS = """
 query(
-  $urlname: String!,
+  $urlname: ID!,
   $query: String,
-  $status: ProNetworkEventStatus,
   $first: Int,
   $after: String
 ) {
-  proNetworkByUrlname(urlname: $urlname) {
-    eventsSearch(input: { query: $query, status: $status, first: $first, after: $after }) {
+  proNetwork(urlname: $urlname) {
+    eventsSearch(input: { filter: { query: $query }, first: $first, after: $after }) {
       totalCount
       pageInfo { hasNextPage endCursor }
       edges {
         node {
-          id title dateTime going eventUrl
+          id title dateTime eventUrl status
           group { name urlname }
         }
       }
@@ -255,9 +243,9 @@ query(
 """
 
 NETWORK_SEARCH_GROUPS = """
-query($urlname: String!, $query: String, $first: Int, $after: String) {
-  proNetworkByUrlname(urlname: $urlname) {
-    groupsSearch(input: { query: $query, first: $first, after: $after }) {
+query($urlname: ID!, $query: String, $first: Int, $after: String) {
+  proNetwork(urlname: $urlname) {
+    groupsSearch(input: { filter: { query: $query }, first: $first, after: $after }) {
       totalCount
       pageInfo { hasNextPage endCursor }
       edges {
@@ -272,14 +260,31 @@ query($urlname: String!, $query: String, $first: Int, $after: String) {
 """
 
 NETWORK_SEARCH_MEMBERS = """
-query($urlname: String!, $query: String, $first: Int, $after: String) {
-  proNetworkByUrlname(urlname: $urlname) {
-    membersSearch(input: { query: $query, first: $first, after: $after }) {
+query(
+  $urlname: ID!,
+  $filter: NetworkUsersFilter,
+  $first: Int,
+  $after: String,
+  $sort: String,
+  $desc: Boolean
+) {
+  proNetwork(urlname: $urlname) {
+    membersSearch(input: {
+      filter: $filter,
+      first: $first, after: $after,
+      sort: $sort, desc: $desc
+    }) {
       totalCount
       pageInfo { hasNextPage endCursor }
       edges {
         node {
           id name
+        }
+        metadata {
+          groupsCount
+          eventsAttended
+          role
+          isOrganizer
         }
       }
     }

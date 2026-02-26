@@ -20,27 +20,25 @@ __all__: list[str] = []
 )
 async def meetup_search_groups(
     query: str,
+    lat: float,
+    lon: float,
     ctx: Context,
-    lat: float | None = None,
-    lon: float | None = None,
     first: int = 20,
     after: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
-    """Search Meetup groups by keyword with optional geo filter.
+    """Search Meetup groups by keyword and location.
 
     Args:
         query: Search term.
-        lat: Latitude for location-based search.
-        lon: Longitude for location-based search.
+        lat: Latitude for location-based search (required).
+        lon: Longitude for location-based search (required).
         first: Number of results per page (max 200).
         after: Cursor for pagination.
     """
-    variables: dict[str, Any] = {"query": query, "first": first}
-    if lat is not None:
-        variables["lat"] = lat
-    if lon is not None:
-        variables["lon"] = lon
+    search_filter: dict[str, Any] = {"query": query, "lat": lat, "lon": lon}
+
+    variables: dict[str, Any] = {"filter": search_filter, "first": first}
     if after is not None:
         variables["after"] = after
 

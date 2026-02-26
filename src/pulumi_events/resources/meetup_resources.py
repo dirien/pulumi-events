@@ -57,7 +57,7 @@ async def meetup_network(
     urlname: str,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> str:
-    """Meetup Pro network info (name, stats, group count)."""
+    """Meetup Pro network info (name, description, status, link)."""
     try:
         data = await provider.get_network(urlname)
         return json.dumps(data, indent=2)

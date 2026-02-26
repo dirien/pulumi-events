@@ -19,6 +19,7 @@ def main() -> None:
         transport="streamable-http",
         host=settings.server_host,
         port=settings.server_port,
+        stateless_http=True,
     )
 
 
