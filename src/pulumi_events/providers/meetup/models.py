@@ -85,8 +85,8 @@ class NetworkNode(BaseModel):
     name: str
     urlname: str
     description: str | None = None
-    group_count: int | None = Field(default=None, alias="groupCount")
-    member_count: int | None = Field(default=None, alias="memberCount")
+    status: str | None = None
+    link: str | None = None
 
 
 class PaginatedResponse(BaseModel):

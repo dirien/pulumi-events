@@ -68,7 +68,7 @@ class MeetupProvider:
 
     async def search_groups(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.SEARCH_GROUPS, kwargs)
-        return data["searchGroups"]
+        return data["groupSearch"]
 
     async def list_my_groups(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.LIST_MY_GROUPS, kwargs)
@@ -194,7 +194,8 @@ class MeetupProvider:
         parallel (bounded by *concurrency*). Returns the member profile plus
         a list of groups they belong to with per-group membership metadata.
         """
-        groups = await self.list_all_my_groups()
+        result = await self.list_all_my_groups()
+        groups = result["groups"]
 
         sem = asyncio.Semaphore(concurrency)
         found_in: list[dict[str, Any]] = []
@@ -242,7 +243,7 @@ class MeetupProvider:
 
     async def search_events(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.SEARCH_EVENTS, kwargs)
-        return data["searchEvents"]
+        return data["eventSearch"]
 
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.CREATE_EVENT, {"input": kwargs})
@@ -291,7 +292,7 @@ class MeetupProvider:
 
     async def get_network(self, urlname: str) -> dict[str, Any]:
         data = await self._client.execute(queries.NETWORK_BY_URLNAME, {"urlname": urlname})
-        return data["proNetworkByUrlname"]
+        return data["proNetwork"]
 
     async def network_search(self, network_urlname: str, **kwargs: Any) -> dict[str, Any]:
         search_type = kwargs.pop("search_type", "events")
@@ -308,7 +309,7 @@ class MeetupProvider:
 
         query, result_key = query_map[search_type]
         data = await self._client.execute(query, variables)
-        return data["proNetworkByUrlname"][result_key]
+        return data["proNetwork"][result_key]
 
 
 def _check_mutation_errors(result: dict[str, Any]) -> None:

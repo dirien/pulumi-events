@@ -66,10 +66,12 @@ pulumi env run pulumi-idp/auth -- uv run pulumi-events
 uv run pulumi-events
 ```
 
-The server starts on `http://127.0.0.1:8080` with:
+The server starts on `http://127.0.0.1:8080` in stateless HTTP mode with:
 - MCP endpoint at `/mcp`
 - Health check at `/health`
 - OAuth callback at `/auth/meetup/callback`
+
+Stateless mode means each request creates a fresh transport — no stale session 404 errors after server restarts.
 
 ## 4. Connect Claude Code
 
@@ -94,7 +96,7 @@ Once connected, ask Claude to log in:
 Use meetup_login to authenticate with Meetup
 ```
 
-This returns an OAuth URL. Open it in your browser, authorize the app, and the server handles the callback automatically. Your token is cached at `~/.config/pulumi-events/meetup_token.json` and refreshes automatically.
+The server automatically opens your browser to the OAuth authorization page (disable with `PULUMI_EVENTS_AUTO_OPEN_BROWSER=false`). Authorize the app, and the server handles the callback automatically. Your token is cached at `~/.config/pulumi-events/meetup_token.json` and refreshes automatically.
 
 Luma requires no login step — the API key is configured at startup.
 
@@ -111,6 +113,8 @@ Read meetup://group/berlin-pulumi-user-group
 List members of berlin-pulumi-user-group
 Get details of member 12345 in berlin-pulumi-user-group
 Find member 12345 across all my groups
+Search for organizers in my Pro network
+Search network members who attended at least 5 events
 
 # Luma
 List my Luma events
@@ -132,6 +136,8 @@ List all people in my Luma calendar
 | `PULUMI_EVENTS_MEETUP_REDIRECT_URI` | `http://127-0-0-1.nip.io:8080/auth/meetup/callback` | OAuth2 redirect URI |
 | `PULUMI_EVENTS_TOKEN_CACHE_DIR` | `~/.config/pulumi-events` | Token cache location |
 | `PULUMI_EVENTS_LUMA_API_ENDPOINT` | `https://public-api.luma.com/v1` | Luma API base URL |
+| `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `true` | Auto-open browser for OAuth login |
+| `PULUMI_EVENTS_MEETUP_PRO_NETWORK_URLNAME` | `pugs` | Default Meetup Pro network URL name |
 
 ## Troubleshooting
 
@@ -145,6 +151,9 @@ List all people in my Luma calendar
   `http://127-0-0-1.nip.io:8080/auth/meetup/callback`
 - Make sure the server is running when you click authorize
 - Check server logs for detailed error messages
+
+### 404 on /mcp after server restart
+The server runs in stateless HTTP mode, so this should not happen. If you see 404 errors, restart your MCP client (Claude Code or Claude Desktop) to clear any cached session state.
 
 ### Meetup token expired
 The server refreshes tokens automatically. If refresh fails, run `meetup_login` again.

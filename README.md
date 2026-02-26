@@ -9,9 +9,10 @@ Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API
 - **19 tools** across two platforms (Meetup + Luma)
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
 - Auto-pagination on all list tools — single tool call returns all results
-- Meetup: OAuth2 authentication with automatic token caching and refresh
+- Meetup: OAuth2 authentication with automatic token caching, refresh, and browser auto-open
+- Meetup Pro network search with member metadata (roles, events attended, group counts)
 - Luma: API key authentication
-- Streamable HTTP transport for production use
+- Stateless HTTP transport — no stale session issues on server restarts
 - Provider architecture for easy addition of new platforms
 
 ## Quick Start
@@ -51,13 +52,13 @@ Then add to your Claude Code MCP config:
 |------|-------------|
 | `list_platforms` | List all configured platforms with auth status |
 | `meetup_login` | Start Meetup OAuth2 login flow |
-| `meetup_search_events` | Search events with filters (location, date, type) |
-| `meetup_search_groups` | Search groups by keyword and location |
+| `meetup_search_events` | Search events with filters (lat/lon required, date, type) |
+| `meetup_search_groups` | Search groups by keyword and location (lat/lon required) |
 | `meetup_list_my_groups` | List all groups you belong to |
 | `meetup_create_event` | Create an event (defaults to DRAFT) |
 | `meetup_edit_event` | Edit an existing event |
 | `meetup_event_action` | Delete, publish, announce, or manage RSVPs |
-| `meetup_network_search` | Search within a Pro network |
+| `meetup_network_search` | Search events, groups, or members within a Pro network |
 | `meetup_list_group_members` | List members of a group with roles and join dates |
 | `meetup_get_member` | Get details of a specific member in a group |
 | `meetup_find_member` | Find a member across all your groups (cross-group lookup) |
@@ -98,6 +99,8 @@ All settings are loaded from environment variables with the `PULUMI_EVENTS_` pre
 | `PULUMI_EVENTS_SERVER_PORT` | `8080` | Server port |
 | `PULUMI_EVENTS_MEETUP_REDIRECT_URI` | `http://127-0-0-1.nip.io:8080/auth/meetup/callback` | OAuth2 redirect URI |
 | `PULUMI_EVENTS_TOKEN_CACHE_DIR` | `~/.config/pulumi-events` | Token cache directory |
+| `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `true` | Auto-open browser for OAuth login |
+| `PULUMI_EVENTS_MEETUP_PRO_NETWORK_URLNAME` | `pugs` | Default Meetup Pro network URL name |
 
 ## Project Structure
 

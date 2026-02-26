@@ -99,7 +99,14 @@ async def meetup_find_member(
     await ctx.info(f"Searching for member {member_id} across all your groups...")
     try:
         return await provider.find_member_across_groups(member_id)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    except ProviderError:
+        return {
+            "found": False,
+            "member_id": member_id,
+            "message": (
+                f"Member {member_id} was not found in any of your groups. "
+                "They may exist in other Pro network groups you don't belong to. "
+                "Try meetup_network_search(search_type='members') to search "
+                "across the entire Pro network."
+            ),
+        }
