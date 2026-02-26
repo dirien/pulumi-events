@@ -61,7 +61,7 @@ async def meetup_list_my_groups(
     limit: int | None = None,
     all_pages: bool = True,
     provider: MeetupProvider = Depends(get_meetup_provider),
-) -> list[dict[str, Any]] | dict[str, Any]:
+) -> dict[str, Any]:
     """List all Meetup groups the authenticated user belongs to.
 
     Auto-paginates through all results by default.

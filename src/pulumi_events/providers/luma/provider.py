@@ -10,6 +10,47 @@ from pulumi_events.providers.luma.client import LumaClient
 __all__ = ["LumaProvider"]
 
 
+def _summarize_event(entry: dict[str, Any]) -> dict[str, Any]:
+    """Extract compact event summary from a list-events entry."""
+    event = entry.get("event", entry)
+    return {
+        "api_id": event.get("api_id"),
+        "name": event.get("name"),
+        "start_at": event.get("start_at"),
+        "end_at": event.get("end_at"),
+        "url": event.get("url"),
+        "visibility": event.get("visibility"),
+        "geo_address_json": event.get("geo_address_json"),
+    }
+
+
+def _summarize_person(entry: dict[str, Any]) -> dict[str, Any]:
+    """Extract compact person summary from a list-people entry."""
+    user = entry.get("user", {})
+    return {
+        "api_id": entry.get("api_id"),
+        "name": user.get("name"),
+        "email": user.get("email") or entry.get("email"),
+        "avatar_url": user.get("avatar_url"),
+        "event_approved_count": entry.get("event_approved_count"),
+        "tags": entry.get("tags"),
+    }
+
+
+def _summarize_guest(entry: dict[str, Any]) -> dict[str, Any]:
+    """Extract compact guest summary from a get-guests entry."""
+    guest = entry.get("guest", entry)
+    user = guest.get("user_generated_by") or guest.get("user", {})
+    return {
+        "api_id": guest.get("api_id"),
+        "name": guest.get("name") or user.get("name"),
+        "email": guest.get("email") or user.get("email"),
+        "approval_status": guest.get("approval_status"),
+        "check_in_qr_code": guest.get("check_in_qr_code"),
+        "registered_at": guest.get("created_at"),
+    }
+
+
 class LumaProvider:
     """Luma event-platform adapter."""
 
@@ -71,11 +112,15 @@ class LumaProvider:
         *,
         limit: int | None = None,
         max_pages: int = 10,
-    ) -> list[dict[str, Any]]:
-        """Auto-paginate through all events."""
-        return await self._client.get_all_pages(
+    ) -> dict[str, Any]:
+        """Auto-paginate through all events, returning compact summaries."""
+        entries = await self._client.get_all_pages(
             "/calendar/list-events", max_pages=max_pages, limit=limit
         )
+        return {
+            "total": len(entries),
+            "events": [_summarize_event(e) for e in entries],
+        }
 
     # ------------------------------------------------------------------
     # Single event
@@ -120,11 +165,15 @@ class LumaProvider:
         *,
         limit: int | None = None,
         max_pages: int = 10,
-    ) -> list[dict[str, Any]]:
-        """Auto-paginate through all people."""
-        return await self._client.get_all_pages(
+    ) -> dict[str, Any]:
+        """Auto-paginate through all people, returning compact summaries."""
+        entries = await self._client.get_all_pages(
             "/calendar/list-people", max_pages=max_pages, limit=limit
         )
+        return {
+            "total": len(entries),
+            "people": [_summarize_person(e) for e in entries],
+        }
 
     # ------------------------------------------------------------------
     # Guests
@@ -151,11 +200,15 @@ class LumaProvider:
         *,
         limit: int | None = None,
         max_pages: int = 10,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Auto-paginate through all guests for an event."""
-        return await self._client.get_all_pages(
+        entries = await self._client.get_all_pages(
             "/event/get-guests",
             {"event_api_id": event_id},
             max_pages=max_pages,
             limit=limit,
         )
+        return {
+            "total": len(entries),
+            "guests": [_summarize_guest(e) for e in entries],
+        }

@@ -23,7 +23,7 @@ async def luma_list_events(
     limit: int | None = None,
     all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
-) -> list[dict[str, Any]] | dict[str, Any]:
+) -> dict[str, Any]:
     """List events from your Luma calendar.
 
     Auto-paginates through all results by default.
@@ -192,7 +192,7 @@ async def luma_list_people(
     limit: int | None = None,
     all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
-) -> list[dict[str, Any]] | dict[str, Any]:
+) -> dict[str, Any]:
     """List all people from your Luma calendar.
 
     Returns contacts with their name, email, event attendance count, and tags.
@@ -222,7 +222,7 @@ async def luma_list_guests(
     limit: int | None = None,
     all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
-) -> list[dict[str, Any]] | dict[str, Any]:
+) -> dict[str, Any]:
     """List guests for a Luma event.
 
     Auto-paginates through all results by default.

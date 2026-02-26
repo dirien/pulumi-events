@@ -25,7 +25,7 @@ async def meetup_list_group_members(
     limit: int | None = None,
     all_pages: bool = True,
     provider: MeetupProvider = Depends(get_meetup_provider),
-) -> list[dict[str, Any]] | dict[str, Any]:
+) -> dict[str, Any]:
     """List members of a Meetup group with their roles and join dates.
 
     Auto-paginates through all results by default.

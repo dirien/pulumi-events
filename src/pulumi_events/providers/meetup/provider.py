@@ -80,7 +80,7 @@ class MeetupProvider:
         first: int = 50,
         limit: int | None = None,
         max_pages: int = DEFAULT_MAX_PAGES,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Auto-paginate through all groups the user belongs to."""
         all_edges: list[dict[str, Any]] = []
         cursor: str | None = None
@@ -107,7 +107,8 @@ class MeetupProvider:
             if not cursor:
                 break
 
-        return [edge["node"] for edge in all_edges]
+        groups = [edge["node"] for edge in all_edges]
+        return {"total": len(groups), "groups": groups}
 
     # ------------------------------------------------------------------
     # Members
@@ -126,7 +127,7 @@ class MeetupProvider:
         status: str | None = None,
         limit: int | None = None,
         max_pages: int = DEFAULT_MAX_PAGES,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Auto-paginate through all members of a group."""
         all_edges: list[dict[str, Any]] = []
         cursor: str | None = None
@@ -155,7 +156,19 @@ class MeetupProvider:
             if not cursor:
                 break
 
-        return [{**edge["node"], "membership": edge.get("metadata")} for edge in all_edges]
+        members = [
+            {
+                "id": edge["node"].get("id"),
+                "name": edge["node"].get("name"),
+                "city": edge["node"].get("city"),
+                "country": edge["node"].get("country"),
+                "role": edge.get("metadata", {}).get("role"),
+                "status": edge.get("metadata", {}).get("status"),
+                "joinTime": edge.get("metadata", {}).get("joinTime"),
+            }
+            for edge in all_edges
+        ]
+        return {"total": len(members), "members": members}
 
     async def get_group_member(self, urlname: str, member_id: str) -> dict[str, Any]:
         variables = {"urlname": urlname, "memberIds": [member_id]}
