@@ -292,11 +292,10 @@ query(
   $urlname: String!,
   $first: Int,
   $after: String,
-  $status: [MembershipStatus!],
-  $sort: GroupMembershipSortInput
+  $status: [MembershipStatus!]
 ) {
   groupByUrlname(urlname: $urlname) {
-    memberships(first: $first, after: $after, filter: { status: $status }, sort: $sort) {
+    memberships(first: $first, after: $after, filter: { status: $status }) {
       totalCount
       pageInfo {
         hasNextPage
