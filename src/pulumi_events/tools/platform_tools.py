@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import webbrowser
 from typing import Any
 
 from fastmcp.dependencies import Depends
@@ -49,11 +50,12 @@ async def meetup_login(
     which exchanges the code and caches the token automatically.
     """
     url = await build_auth_url(settings.meetup_client_id, settings)
-    await ctx.info(f"Open this URL to authorize: {url}")
+    webbrowser.open(url)
+    await ctx.info("Opened browser for Meetup authorization.")
     return {
         "auth_url": url,
         "instruction": (
-            "Open this URL in a browser. After authorizing, the server will "
-            "automatically receive and cache your token."
+            "A browser window has been opened. Authorize the app and the server "
+            "will automatically receive and cache your token."
         ),
     }
