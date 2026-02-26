@@ -58,13 +58,24 @@ class LumaProvider:
         after: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
-        """List events from the authenticated user's calendar."""
+        """List events from the authenticated user's calendar (single page)."""
         params: dict[str, Any] = {}
         if after is not None:
             params["pagination_cursor"] = after
         if limit is not None:
             params["limit"] = limit
         return await self._client.get("/calendar/list-events", params or None)
+
+    async def list_all_events(
+        self,
+        *,
+        limit: int | None = None,
+        max_pages: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Auto-paginate through all events."""
+        return await self._client.get_all_pages(
+            "/calendar/list-events", max_pages=max_pages, limit=limit
+        )
 
     # ------------------------------------------------------------------
     # Single event
@@ -96,13 +107,24 @@ class LumaProvider:
         after: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
-        """List all people from the authenticated user's calendar."""
+        """List people from the authenticated user's calendar (single page)."""
         params: dict[str, Any] = {}
         if after is not None:
             params["pagination_cursor"] = after
         if limit is not None:
             params["limit"] = limit
         return await self._client.get("/calendar/list-people", params or None)
+
+    async def list_all_people(
+        self,
+        *,
+        limit: int | None = None,
+        max_pages: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Auto-paginate through all people."""
+        return await self._client.get_all_pages(
+            "/calendar/list-people", max_pages=max_pages, limit=limit
+        )
 
     # ------------------------------------------------------------------
     # Guests
@@ -115,10 +137,25 @@ class LumaProvider:
         after: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
-        """List guests for a specific event."""
+        """List guests for a specific event (single page)."""
         params: dict[str, Any] = {"event_api_id": event_id}
         if after is not None:
             params["pagination_cursor"] = after
         if limit is not None:
             params["limit"] = limit
         return await self._client.get("/event/get-guests", params)
+
+    async def list_all_guests(
+        self,
+        event_id: str,
+        *,
+        limit: int | None = None,
+        max_pages: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Auto-paginate through all guests for an event."""
+        return await self._client.get_all_pages(
+            "/event/get-guests",
+            {"event_api_id": event_id},
+            max_pages=max_pages,
+            limit=limit,
+        )

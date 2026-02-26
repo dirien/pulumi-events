@@ -6,8 +6,9 @@ Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API
 
 ## Features
 
-- **18 tools** across two platforms (Meetup + Luma)
+- **19 tools** across two platforms (Meetup + Luma)
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
+- Auto-pagination on all list tools — single tool call returns all results
 - Meetup: OAuth2 authentication with automatic token caching and refresh
 - Luma: API key authentication
 - Streamable HTTP transport for production use
@@ -59,6 +60,7 @@ Then add to your Claude Code MCP config:
 | `meetup_network_search` | Search within a Pro network |
 | `meetup_list_group_members` | List members of a group with roles and join dates |
 | `meetup_get_member` | Get details of a specific member in a group |
+| `meetup_find_member` | Find a member across all your groups (cross-group lookup) |
 | `meetup_create_venue` | Create a venue for events |
 
 ### Luma

@@ -110,6 +110,7 @@ Create a draft event in berlin-pulumi-user-group
 Read meetup://group/berlin-pulumi-user-group
 List members of berlin-pulumi-user-group
 Get details of member 12345 in berlin-pulumi-user-group
+Find member 12345 across all my groups
 
 # Luma
 List my Luma events

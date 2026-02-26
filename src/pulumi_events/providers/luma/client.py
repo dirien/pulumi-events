@@ -16,6 +16,8 @@ __all__ = ["LumaClient"]
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_PAGES = 10
+
 
 class LumaClient:
     """Low-level async HTTP client for the Luma REST API."""
@@ -52,6 +54,45 @@ class LumaClient:
             headers=self._headers(),
         )
         return self._handle_response(resp)
+
+    async def get_all_pages(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        max_pages: int = DEFAULT_MAX_PAGES,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch all pages from a paginated Luma endpoint.
+
+        Collects ``entries`` arrays across pages until ``has_more`` is false,
+        the *max_pages* safety cap is reached, or *limit* total items have
+        been collected.
+        """
+        all_entries: list[dict[str, Any]] = []
+        cursor: str | None = None
+        params = dict(params) if params else {}
+
+        for _ in range(max_pages):
+            if cursor is not None:
+                params["pagination_cursor"] = cursor
+
+            page = await self.get(path, params or None)
+            entries = page.get("entries", [])
+            all_entries.extend(entries)
+
+            if limit is not None and len(all_entries) >= limit:
+                all_entries = all_entries[:limit]
+                break
+
+            if not page.get("has_more", False):
+                break
+
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
+
+        return all_entries
 
     @staticmethod
     def _handle_response(resp: httpx.Response) -> dict[str, Any]:

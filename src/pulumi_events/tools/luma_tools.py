@@ -20,19 +20,23 @@ __all__: list[str] = []
 )
 async def luma_list_events(
     ctx: Context,
-    after: str | None = None,
     limit: int | None = None,
+    all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
-) -> dict[str, Any]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     """List events from your Luma calendar.
 
+    Auto-paginates through all results by default.
+
     Args:
-        after: Pagination cursor from a previous response.
-        limit: Maximum number of events to return.
+        limit: Maximum total number of events to return.
+        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching Luma events...")
     try:
-        return await provider.list_events(after=after, limit=limit)
+        if all_pages:
+            return await provider.list_all_events(limit=limit)
+        return await provider.list_events(limit=limit)
     except ProviderError as exc:
         from fastmcp.exceptions import ToolError
 
@@ -185,21 +189,24 @@ async def luma_cancel_event(
 )
 async def luma_list_people(
     ctx: Context,
-    after: str | None = None,
     limit: int | None = None,
+    all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
-) -> dict[str, Any]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     """List all people from your Luma calendar.
 
     Returns contacts with their name, email, event attendance count, and tags.
+    Auto-paginates through all results by default.
 
     Args:
-        after: Pagination cursor from a previous response.
-        limit: Maximum number of people to return.
+        limit: Maximum total number of people to return.
+        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching Luma people...")
     try:
-        return await provider.list_people(after=after, limit=limit)
+        if all_pages:
+            return await provider.list_all_people(limit=limit)
+        return await provider.list_people(limit=limit)
     except ProviderError as exc:
         from fastmcp.exceptions import ToolError
 
@@ -212,20 +219,24 @@ async def luma_list_people(
 async def luma_list_guests(
     event_id: str,
     ctx: Context,
-    after: str | None = None,
     limit: int | None = None,
+    all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
-) -> dict[str, Any]:
+) -> list[dict[str, Any]] | dict[str, Any]:
     """List guests for a Luma event.
+
+    Auto-paginates through all results by default.
 
     Args:
         event_id: The Luma event API ID (evt-...).
-        after: Pagination cursor.
-        limit: Maximum number of guests to return.
+        limit: Maximum total number of guests to return.
+        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info(f"Fetching guests for Luma event {event_id}...")
     try:
-        return await provider.list_guests(event_id, after=after, limit=limit)
+        if all_pages:
+            return await provider.list_all_guests(event_id, limit=limit)
+        return await provider.list_guests(event_id, limit=limit)
     except ProviderError as exc:
         from fastmcp.exceptions import ToolError
 
