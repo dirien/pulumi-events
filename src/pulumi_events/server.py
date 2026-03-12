@@ -9,6 +9,10 @@ from typing import Any
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.auth import StaticTokenVerifier
+from fastmcp.server.auth.providers.google import GoogleProvider as GoogleProvider
+from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
@@ -68,8 +72,37 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         }
 
 
+_boot_settings = Settings()
+_auth: StaticTokenVerifier | GoogleProvider | None = None
+if _boot_settings.google_client_id and _boot_settings.google_client_secret:
+    _host = (
+        "localhost" if _boot_settings.server_host == "127.0.0.1" else _boot_settings.server_host
+    )
+    _base_url = f"http://{_host}:{_boot_settings.server_port}"
+    _auth = GoogleProvider(
+        client_id=_boot_settings.google_client_id,
+        client_secret=_boot_settings.google_client_secret,
+        base_url=_base_url,
+        required_scopes=[
+            "openid",
+            "email",
+            "profile",
+        ],
+        require_authorization_consent=False,
+    )
+elif _boot_settings.auth_token:
+    _auth = StaticTokenVerifier(
+        tokens={
+            _boot_settings.auth_token: {
+                "client_id": "pulumi-events-client",
+                "scopes": ["full"],
+            },
+        },
+    )
+
 mcp = FastMCP(
     "pulumi-events",
+    auth=_auth,
     instructions=(
         "MCP server for managing events on Meetup.com and Luma. "
         "Use meetup_login to authenticate with Meetup. "
@@ -79,6 +112,41 @@ mcp = FastMCP(
         "luma://self, luma://event/{event_id}, etc."
     ),
     lifespan=app_lifespan,
+    middleware=[
+        ErrorHandlingMiddleware(
+            logger=logger,
+            include_traceback=False,
+            transform_errors=True,
+        ),
+        RetryMiddleware(
+            max_retries=2,
+            base_delay=1.0,
+            max_delay=10.0,
+            retry_exceptions=(ConnectionError, TimeoutError),
+        ),
+        ResponseCachingMiddleware(
+            call_tool_settings={
+                "enabled": True,
+                "ttl": 300,
+                "included_tools": [
+                    "luma_list_events",
+                    "luma_get_event",
+                    "luma_list_people",
+                    "luma_list_guests",
+                    "meetup_get_event",
+                    "meetup_list_group_events",
+                    "meetup_search_events",
+                    "meetup_search_groups",
+                    "meetup_list_my_groups",
+                    "meetup_list_group_members",
+                    "meetup_get_member",
+                    "meetup_find_member",
+                    "meetup_network_search",
+                    "list_platforms",
+                ],
+            },
+        ),
+    ],
 )
 
 

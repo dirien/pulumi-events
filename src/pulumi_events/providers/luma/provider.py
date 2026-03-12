@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pulumi_events.providers.base import ProviderCapability
@@ -130,17 +131,38 @@ class LumaProvider:
         data = await self._client.get("/event/get", {"api_id": event_id})
         return data.get("event", data)
 
+    async def upload_image(self, file_path: Path) -> str:
+        """Upload a local image to Luma CDN. Returns the CDN URL."""
+        return await self._client.upload_image(file_path)
+
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.post("/event/create", kwargs)
         return data.get("event", data)
 
     async def update_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]:
-        kwargs["event_id"] = event_id
+        kwargs["event_api_id"] = event_id
         data = await self._client.post("/event/update", kwargs)
         return data.get("event", data)
 
     async def cancel_event(self, event_id: str) -> dict[str, Any]:
-        return await self._client.post("/event/cancel", {"event_id": event_id})
+        """Cancel a Luma event (two-step: request token, then confirm)."""
+        # Step 1: request a cancellation token
+        token_data = await self._client.post("/event/cancel/request", {"event_id": event_id})
+        cancellation_token = token_data.get("cancellation_token")
+        if not cancellation_token:
+            from pulumi_events.exceptions import ProviderError
+
+            msg = f"Luma cancel/request did not return a token: {token_data}"
+            raise ProviderError(msg)
+
+        # Step 2: confirm cancellation
+        return await self._client.post(
+            "/event/cancel",
+            {
+                "event_id": event_id,
+                "cancellation_token": cancellation_token,
+            },
+        )
 
     # ------------------------------------------------------------------
     # People

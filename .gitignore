@@ -25,3 +25,12 @@ meetup_token.json
 
 # uv
 uv.lock
+
+# Claude Code
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# yaah
+yaah.json

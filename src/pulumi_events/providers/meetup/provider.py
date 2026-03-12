@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
+
+import anyio
 
 from pulumi_events.providers.base import ProviderCapability
 from pulumi_events.providers.meetup import queries
 from pulumi_events.providers.meetup.client import MeetupGraphQLClient
+from pulumi_events.utils import guess_image_content_type
 
 __all__ = ["MeetupProvider"]
 
@@ -34,6 +38,7 @@ class MeetupProvider:
             ProviderCapability.SEARCH_EVENTS,
             ProviderCapability.SEARCH_GROUPS,
             ProviderCapability.LIST_GROUPS,
+            ProviderCapability.LIST_EVENTS,
             ProviderCapability.CREATE_EVENT,
             ProviderCapability.EDIT_EVENT,
             ProviderCapability.DELETE_EVENT,
@@ -241,9 +246,79 @@ class MeetupProvider:
         data = await self._client.execute(queries.EVENT_BY_ID, {"eventId": event_id})
         return data["event"]
 
+    async def list_group_events(self, urlname: str, **kwargs: Any) -> dict[str, Any]:
+        variables: dict[str, Any] = {"urlname": urlname, **kwargs}
+        data = await self._client.execute(queries.GROUP_EVENTS, variables)
+        return data["groupByUrlname"]["events"]
+
+    async def list_all_group_events(
+        self,
+        urlname: str,
+        *,
+        status: list[str] | None = None,
+        first: int = 50,
+        limit: int | None = None,
+        max_pages: int = DEFAULT_MAX_PAGES,
+    ) -> dict[str, Any]:
+        """Auto-paginate through all events of a group."""
+        all_edges: list[dict[str, Any]] = []
+        cursor: str | None = None
+
+        for _ in range(max_pages):
+            variables: dict[str, Any] = {"urlname": urlname, "first": first}
+            if cursor is not None:
+                variables["after"] = cursor
+            if status is not None:
+                variables["status"] = status
+
+            data = await self._client.execute(queries.GROUP_EVENTS, variables)
+            connection = data["groupByUrlname"]["events"]
+            edges = connection.get("edges", [])
+            all_edges.extend(edges)
+
+            if limit is not None and len(all_edges) >= limit:
+                all_edges = all_edges[:limit]
+                break
+
+            page_info = connection.get("pageInfo", {})
+            if not page_info.get("hasNextPage", False):
+                break
+
+            cursor = page_info.get("endCursor")
+            if not cursor:
+                break
+
+        events = [edge["node"] for edge in all_edges]
+        return {"total": len(events), "events": events}
+
     async def search_events(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.SEARCH_EVENTS, kwargs)
         return data["eventSearch"]
+
+    async def upload_event_photo(self, group_urlname: str, file_path: Path) -> str:
+        """Upload a photo and return the photo ID."""
+        from pulumi_events.exceptions import ProviderError
+
+        if not await anyio.Path(file_path).is_file():
+            msg = f"Image file not found: {file_path}"
+            raise ProviderError(msg)
+
+        group = await self.get_group(group_urlname)
+        group_id = group["id"]
+        content_type = guess_image_content_type(file_path)
+
+        data = await self._client.execute(
+            queries.UPLOAD_EVENT_PHOTO,
+            {"input": {"groupId": group_id, "contentType": content_type}},
+        )
+        result = data["createGroupEventPhoto"]
+        _check_mutation_errors(result)
+
+        upload_url = result["uploadUrl"]
+        photo_id = result["photo"]["id"]
+
+        await self._client.upload_binary(upload_url, file_path, content_type)
+        return photo_id
 
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.CREATE_EVENT, {"input": kwargs})
@@ -261,7 +336,7 @@ class MeetupProvider:
     async def event_action(self, event_id: str, action: str) -> dict[str, Any]:
         action_map: dict[str, tuple[str, str]] = {
             "delete": (queries.DELETE_EVENT, "deleteEvent"),
-            "publish": (queries.PUBLISH_EVENT, "publishEvent"),
+            "publish": (queries.PUBLISH_EVENT, "publishEventDraft"),
             "announce": (queries.ANNOUNCE_EVENT, "announceEvent"),
             "close_rsvps": (queries.CLOSE_EVENT_RSVPS, "closeEventRsvps"),
             "open_rsvps": (queries.OPEN_EVENT_RSVPS, "openEventRsvps"),

@@ -16,7 +16,9 @@ __all__: list[str] = []
 
 
 @mcp.tool(
+    tags={"meetup", "members"},
     annotations={"readOnlyHint": True},
+    timeout=120.0,
 )
 async def meetup_list_group_members(
     group_urlname: str,
@@ -51,6 +53,7 @@ async def meetup_list_group_members(
 
 
 @mcp.tool(
+    tags={"meetup", "members"},
     annotations={"readOnlyHint": True},
 )
 async def meetup_get_member(
@@ -78,7 +81,9 @@ async def meetup_get_member(
 
 
 @mcp.tool(
+    tags={"meetup", "members"},
     annotations={"readOnlyHint": True},
+    timeout=120.0,
 )
 async def meetup_find_member(
     member_id: str,

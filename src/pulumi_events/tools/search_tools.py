@@ -17,6 +17,7 @@ __all__: list[str] = []
 
 
 @mcp.tool(
+    tags={"meetup", "events", "search"},
     annotations={"readOnlyHint": True},
 )
 async def meetup_search_events(
@@ -65,6 +66,7 @@ async def meetup_search_events(
 
 
 @mcp.tool(
+    tags={"meetup", "network", "search"},
     annotations={"readOnlyHint": True},
 )
 async def meetup_network_search(

@@ -15,7 +15,9 @@ from pulumi_events.tools._deps import get_meetup_provider
 __all__: list[str] = []
 
 
-@mcp.tool()
+@mcp.tool(
+    tags={"meetup", "venues"},
+)
 async def meetup_create_venue(
     group_urlname: str,
     name: str,

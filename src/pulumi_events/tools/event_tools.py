@@ -1,7 +1,8 @@
-"""Event mutation tools: create, edit, event_action."""
+"""Event tools: get, create, edit, event_action."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 from fastmcp.dependencies import Depends
@@ -15,7 +16,140 @@ from pulumi_events.tools._deps import get_meetup_provider
 __all__: list[str] = []
 
 
-@mcp.tool()
+@mcp.tool(
+    tags={"meetup", "events"},
+    annotations={"readOnlyHint": True},
+    output_schema={
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "dateTime": {"type": "string"},
+            "duration": {"type": "string"},
+            "endTime": {"type": "string"},
+            "eventUrl": {"type": "string"},
+            "status": {"type": "string"},
+            "venue": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "address": {"type": "string"},
+                    "city": {"type": "string"},
+                    "country": {"type": "string"},
+                    "lat": {"type": "number"},
+                    "lon": {"type": "number"},
+                },
+            },
+            "group": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "urlname": {"type": "string"},
+                },
+            },
+        },
+    },
+)
+async def meetup_get_event(
+    event_id: str,
+    ctx: Context,
+    provider: MeetupProvider = Depends(get_meetup_provider),
+) -> dict[str, Any]:
+    """Get full details of a Meetup event by ID.
+
+    Returns the complete event including title, description, date/time,
+    venue, group, hosts, and RSVP settings. Use this to read an event
+    before copying it to another platform.
+
+    Args:
+        event_id: The Meetup event ID (numeric string).
+    """
+    await ctx.info(f"Fetching Meetup event {event_id}...")
+    try:
+        return await provider.get_event(event_id)
+    except ProviderError as exc:
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(str(exc)) from exc
+
+
+@mcp.tool(
+    tags={"meetup", "events"},
+    annotations={"readOnlyHint": True},
+    timeout=120.0,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "total": {"type": "integer"},
+            "events": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "dateTime": {"type": "string"},
+                        "eventUrl": {"type": "string"},
+                        "status": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+)
+async def meetup_list_group_events(
+    group_urlname: str,
+    ctx: Context,
+    status: str | None = None,
+    limit: int | None = None,
+    all_pages: bool = True,
+    provider: MeetupProvider = Depends(get_meetup_provider),
+) -> dict[str, Any]:
+    """List events for a Meetup group, including drafts.
+
+    Returns all events for the group filtered by status. Use this to see
+    draft events, upcoming published events, or past events.
+
+    Args:
+        group_urlname: URL name of the group (e.g. "berlin-pulumi-user-group").
+        status: Filter by event status. One of: DRAFT, ACTIVE, PAST,
+            CANCELLED, PENDING. Defaults to all statuses.
+        limit: Maximum total number of events to return.
+        all_pages: Fetch all pages automatically (default True).
+    """
+    status_label = status or "all"
+    status_list = [status] if status is not None else None
+    await ctx.info(f"Fetching {status_label} events for {group_urlname}...")
+    try:
+        if all_pages:
+            return await provider.list_all_group_events(
+                group_urlname, status=status_list, limit=limit
+            )
+        variables: dict[str, Any] = {"first": 50}
+        if status_list is not None:
+            variables["status"] = status_list
+        return await provider.list_group_events(group_urlname, **variables)
+    except ProviderError as exc:
+        from fastmcp.exceptions import ToolError
+
+        raise ToolError(str(exc)) from exc
+
+
+@mcp.tool(
+    tags={"meetup", "events"},
+    timeout=120.0,
+    output_schema={
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "dateTime": {"type": "string"},
+            "eventUrl": {"type": "string"},
+            "status": {"type": "string"},
+        },
+    },
+)
 async def meetup_create_event(
     group_urlname: str,
     title: str,
@@ -32,6 +166,7 @@ async def meetup_create_event(
     topics: list[str] | None = None,
     pro_network_filter_id: str | None = None,
     pro_network_timezone: str | None = None,
+    featured_image_path: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """Create a Meetup event (defaults to DRAFT for safety).
@@ -51,6 +186,7 @@ async def meetup_create_event(
         topics: List of topic IDs.
         pro_network_filter_id: Pro network filter ID for network-wide events.
         pro_network_timezone: Timezone for Pro network events.
+        featured_image_path: Local file path to a featured image. Uploaded and set automatically.
     """
     input_data: dict[str, Any] = {
         "groupUrlname": group_urlname,
@@ -79,7 +215,22 @@ async def meetup_create_event(
 
     await ctx.info(f"Creating event '{title}' in {group_urlname} (status={publish_status})...")
     try:
-        return await provider.create_event(**input_data)
+        if featured_image_path is not None:
+            await ctx.report_progress(0, total=3)
+
+        event = await provider.create_event(**input_data)
+
+        if featured_image_path is not None:
+            await ctx.report_progress(1, total=3)
+            await ctx.info("Uploading featured image...")
+            image_path = Path(featured_image_path)
+            photo_id = await provider.upload_event_photo(group_urlname, image_path)
+            await ctx.report_progress(2, total=3)
+            await ctx.info("Setting featured photo on event...")
+            event = await provider.edit_event(event["id"], featuredPhotoId=photo_id)
+            await ctx.report_progress(3, total=3)
+
+        return event
     except ProviderError as exc:
         from fastmcp.exceptions import ToolError
 
@@ -87,11 +238,24 @@ async def meetup_create_event(
 
 
 @mcp.tool(
+    tags={"meetup", "events"},
+    timeout=120.0,
     annotations={"idempotentHint": True},
+    output_schema={
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "dateTime": {"type": "string"},
+            "eventUrl": {"type": "string"},
+            "status": {"type": "string"},
+        },
+    },
 )
 async def meetup_edit_event(
     event_id: str,
     ctx: Context,
+    group_urlname: str | None = None,
     title: str | None = None,
     description: str | None = None,
     start_date_time: str | None = None,
@@ -102,12 +266,14 @@ async def meetup_edit_event(
     question: str | None = None,
     hosts: list[str] | None = None,
     topics: list[str] | None = None,
+    featured_image_path: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """Edit an existing Meetup event. Only provided fields are updated.
 
     Args:
         event_id: The event ID to edit.
+        group_urlname: Group URL name (required when setting featured_image_path).
         title: New event title.
         description: New description (HTML supported).
         start_date_time: New start time (ISO 8601).
@@ -118,6 +284,8 @@ async def meetup_edit_event(
         question: New RSVP question.
         hosts: New list of host member IDs.
         topics: New list of topic IDs.
+        featured_image_path: Local file path to a featured image. Uploaded and set
+            automatically. Requires group_urlname.
     """
     kwargs: dict[str, Any] = {}
     if title is not None:
@@ -141,16 +309,34 @@ async def meetup_edit_event(
     if topics is not None:
         kwargs["topics"] = topics
 
-    await ctx.info(f"Editing event {event_id}...")
     try:
-        return await provider.edit_event(event_id, **kwargs)
+        if featured_image_path is not None:
+            if group_urlname is None:
+                from fastmcp.exceptions import ToolError
+
+                raise ToolError("group_urlname is required when setting featured_image_path")
+            await ctx.report_progress(0, total=2)
+            await ctx.info("Uploading featured image...")
+            image_path = Path(featured_image_path)
+            photo_id = await provider.upload_event_photo(group_urlname, image_path)
+            kwargs["featuredPhotoId"] = photo_id
+            await ctx.report_progress(1, total=2)
+
+        await ctx.info(f"Editing event {event_id}...")
+        result = await provider.edit_event(event_id, **kwargs)
+
+        if featured_image_path is not None:
+            await ctx.report_progress(2, total=2)
+        return result
     except ProviderError as exc:
         from fastmcp.exceptions import ToolError
 
         raise ToolError(str(exc)) from exc
 
 
-@mcp.tool()
+@mcp.tool(
+    tags={"meetup", "events"},
+)
 async def meetup_event_action(
     event_id: str,
     action: Literal["delete", "publish", "announce", "close_rsvps", "open_rsvps"],

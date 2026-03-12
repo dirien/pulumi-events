@@ -88,7 +88,52 @@ Add to `~/.claude/settings.json` (or project-level `.claude/settings.json`):
 }
 ```
 
-## 5. Authenticate with Meetup
+## 5. Secure the MCP Endpoint (Optional)
+
+To require bearer token authentication on all MCP requests, set `PULUMI_EVENTS_AUTH_TOKEN`. When unset, the server runs without auth (default for local development).
+
+### Generate a token
+
+```bash
+openssl rand -hex 32
+```
+
+### Set the token
+
+**Pulumi ESC:**
+
+```bash
+pulumi env set pulumi-idp/auth \
+  'environmentVariables.PULUMI_EVENTS_AUTH_TOKEN' 'your-generated-token'
+```
+
+**Plain environment variable:**
+
+```bash
+export PULUMI_EVENTS_AUTH_TOKEN="your-generated-token"
+```
+
+### Update Claude Code config
+
+Add the `headers` field with the token to your MCP server config:
+
+```json
+{
+  "mcpServers": {
+    "pulumi-events": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer your-generated-token"
+      }
+    }
+  }
+}
+```
+
+Requests without a valid `Authorization: Bearer <token>` header will receive a 401 response. Health (`/health`) and OAuth callback (`/auth/meetup/callback`) routes are not affected.
+
+## 6. Authenticate with Meetup
 
 Once connected, ask Claude to log in:
 
@@ -100,15 +145,19 @@ The server automatically opens your browser to the OAuth authorization page (dis
 
 Luma requires no login step — the API key is configured at startup.
 
-## 6. Start Using
+## 7. Start Using
 
 After authentication, you can:
 
 ```
 # Meetup
 List my Meetup groups
+Get details of Meetup event 12345
+List draft events in berlin-pulumi-user-group
+List all events in tel-aviv-pulumi-user-group
 Search for Pulumi events on Meetup
 Create a draft event in berlin-pulumi-user-group
+Create a draft event in berlin-pulumi-user-group with cover image /tmp/banner.png
 Read meetup://group/berlin-pulumi-user-group
 List members of berlin-pulumi-user-group
 Get details of member 12345 in berlin-pulumi-user-group
@@ -118,11 +167,52 @@ Search network members who attended at least 5 events
 
 # Luma
 List my Luma events
+Get details of Luma event evt-abc123
 Read luma://self
 Create a Luma event called "Demo Night" on March 15
+Create a Luma event with cover image /tmp/event-banner.jpg
+Update luma event evt-abc123 with a new cover image /tmp/new-banner.png
 List guests for luma event evt-abc123
 List all people in my Luma calendar
 ```
+
+### Image Upload
+
+Both `meetup_create_event` / `meetup_edit_event` and `luma_create_event` / `luma_update_event` accept a local file path for cover images. The server handles CDN upload automatically:
+
+- **Luma**: pass `cover_image_path` — uploads via presigned URL to Luma CDN
+- **Meetup**: pass `featured_image_path` (requires `group_urlname`) — uploads via Meetup's photo API and sets the featured photo
+
+Supported formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
+
+### Cross-Platform Events
+
+You can ask the LLM to copy events between platforms:
+
+```
+Read meetup event 12345 and create a matching Luma event
+```
+
+The LLM will read the Meetup event details and use the Google Maps place ID to set the venue on Luma. The server strips invalid address fields server-side as a safety net.
+
+## Architecture
+
+### Middleware Stack
+
+The server uses FastMCP's middleware for reliability and performance:
+
+- **ErrorHandlingMiddleware** — transforms raw Python exceptions into proper MCP error codes so LLM clients receive actionable error messages instead of tracebacks
+- **RetryMiddleware** — automatically retries on transient `ConnectionError` / `TimeoutError` with exponential backoff (2 retries, 1–10s delay)
+- **ResponseCachingMiddleware** — caches responses from read-only tools (list, search, get) for 5 minutes to reduce API calls; mutation tools are never cached
+
+### Tool Metadata
+
+All 22 tools include metadata for better LLM integration:
+
+- **Tags** — platform (`meetup`, `luma`) and domain (`events`, `groups`, `members`, etc.) for filtering
+- **Timeouts** — 120s on upload-capable tools and all auto-paginating list tools to prevent hangs
+- **Output schemas** — key tools declare their response structure for structured LLM parsing
+- **Annotations** — `readOnlyHint` and `idempotentHint` help LLM clients decide when to cache or retry
 
 ## Configuration Reference
 
@@ -136,6 +226,7 @@ List all people in my Luma calendar
 | `PULUMI_EVENTS_MEETUP_REDIRECT_URI` | `http://127-0-0-1.nip.io:8080/auth/meetup/callback` | OAuth2 redirect URI |
 | `PULUMI_EVENTS_TOKEN_CACHE_DIR` | `~/.config/pulumi-events` | Token cache location |
 | `PULUMI_EVENTS_LUMA_API_ENDPOINT` | `https://public-api.luma.com/v1` | Luma API base URL |
+| `PULUMI_EVENTS_AUTH_TOKEN` | — | Bearer token for MCP endpoint auth (optional, disabled if unset) |
 | `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `true` | Auto-open browser for OAuth login |
 | `PULUMI_EVENTS_MEETUP_PRO_NETWORK_URLNAME` | `pugs` | Default Meetup Pro network URL name |
 

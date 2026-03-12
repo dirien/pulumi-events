@@ -1,7 +1,7 @@
 [project]
 name = "pulumi-events"
 version = "0.1.0"
-description = "MCP server for managing events on Meetup.com (and later Luma) via AI assistants"
+description = "MCP server for managing events on Meetup.com and Luma via AI assistants"
 readme = "README.md"
 authors = [{ name = "Engin Diri", email = "engin.diri@ediri.de" }]
 requires-python = ">=3.12"

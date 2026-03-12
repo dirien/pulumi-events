@@ -27,3 +27,6 @@ class Settings(BaseSettings):
     server_port: int = 8080
     auto_open_browser: bool = True
     meetup_pro_network_urlname: str = "pugs"
+    auth_token: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""

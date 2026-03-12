@@ -18,7 +18,27 @@ __all__: list[str] = []
 
 
 @mcp.tool(
+    tags={"platform"},
     annotations={"readOnlyHint": True},
+    output_schema={
+        "type": "object",
+        "properties": {
+            "platforms": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "authenticated": {"type": "boolean"},
+                        "capabilities": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        },
+    },
 )
 async def list_platforms(
     meetup: MeetupProvider = Depends(get_meetup_provider),
@@ -37,7 +57,9 @@ async def list_platforms(
     return {"platforms": platforms}
 
 
-@mcp.tool()
+@mcp.tool(
+    tags={"meetup", "auth"},
+)
 async def meetup_login(
     ctx: Context,
     settings: Settings = Depends(get_settings),

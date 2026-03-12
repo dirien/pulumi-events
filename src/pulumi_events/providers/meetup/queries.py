@@ -10,6 +10,7 @@ __all__ = [
     "DELETE_EVENT",
     "EVENT_BY_ID",
     "GROUP_BY_URLNAME",
+    "GROUP_EVENTS",
     "GROUP_MEMBERS",
     "GROUP_MEMBER_BY_ID",
     "LIST_MY_GROUPS",
@@ -23,6 +24,7 @@ __all__ = [
     "SEARCH_GROUPS",
     "SELF_QUERY",
     "UPDATE_EVENT",
+    "UPLOAD_EVENT_PHOTO",
 ]
 
 # ---------------------------------------------------------------------------
@@ -59,6 +61,41 @@ query($urlname: String!) {
     timezone
     keyGroupPhoto {
       baseUrl
+    }
+  }
+}
+"""
+
+GROUP_EVENTS = """
+query(
+  $urlname: String!,
+  $status: [EventStatus],
+  $first: Int,
+  $after: String
+) {
+  groupByUrlname(urlname: $urlname) {
+    events(filter: { status: $status }, first: $first, after: $after) {
+      totalCount
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          id
+          title
+          dateTime
+          duration
+          endTime
+          eventUrl
+          status
+          venue {
+            name
+            city
+            country
+          }
+        }
+      }
     }
   }
 }
@@ -422,8 +459,8 @@ mutation($input: DeleteEventInput!) {
 """
 
 PUBLISH_EVENT = """
-mutation($input: PublishEventInput!) {
-  publishEvent(input: $input) {
+mutation($input: PublishEventDraftInput!) {
+  publishEventDraft(input: $input) {
     event {
       id
       title
@@ -441,7 +478,12 @@ mutation($input: PublishEventInput!) {
 ANNOUNCE_EVENT = """
 mutation($input: AnnounceEventInput!) {
   announceEvent(input: $input) {
-    success
+    event {
+      id
+      title
+      status
+      eventUrl
+    }
     errors {
       message
       code
@@ -475,6 +517,21 @@ mutation($input: OpenEventRsvpsInput!) {
       rsvpSettings {
         rsvpLimit
       }
+    }
+    errors {
+      message
+      code
+    }
+  }
+}
+"""
+
+UPLOAD_EVENT_PHOTO = """
+mutation($input: GroupEventPhotoCreateInput!) {
+  createGroupEventPhoto(input: $input) {
+    uploadUrl
+    photo {
+      id
     }
     errors {
       message

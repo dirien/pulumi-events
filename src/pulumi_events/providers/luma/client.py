@@ -5,9 +5,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from pulumi_events.exceptions import AuthenticationError, ProviderError
+from pulumi_events.utils import guess_image_content_type
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import httpx
 
     from pulumi_events.settings import Settings
@@ -93,6 +98,40 @@ class LumaClient:
                 break
 
         return all_entries
+
+    async def upload_image(self, file_path: Path) -> str:
+        """Upload a local image to Luma CDN. Returns the CDN URL."""
+        apath = anyio.Path(file_path)
+        if not await apath.is_file():
+            msg = f"Image file not found: {file_path}"
+            raise ProviderError(msg)
+
+        content_type = guess_image_content_type(file_path)
+        try:
+            file_bytes = await apath.read_bytes()
+        except OSError as exc:
+            msg = f"Failed to read image file {file_path}: {exc}"
+            raise ProviderError(msg) from exc
+
+        # Step 1: get a presigned upload URL
+        data = await self.post("/images/create-upload-url", json={"purpose": "event-cover"})
+        upload_url = data.get("upload_url") or data.get("url")
+        cdn_url = data.get("file_url") or data.get("image_url")
+        if not upload_url or not cdn_url:
+            msg = f"Unexpected Luma upload response: {data}"
+            raise ProviderError(msg)
+
+        # Step 2: PUT the binary to the presigned URL
+        resp = await self._http.put(
+            upload_url,
+            content=file_bytes,
+            headers={"Content-Type": content_type},
+        )
+        if resp.status_code >= 400:
+            msg = f"Luma image upload failed ({resp.status_code}): {resp.text}"
+            raise ProviderError(msg)
+
+        return cdn_url
 
     @staticmethod
     def _handle_response(resp: httpx.Response) -> dict[str, Any]:

@@ -7,10 +7,14 @@ import logging
 import webbrowser
 from typing import TYPE_CHECKING, Any
 
+import anyio
+
 from pulumi_events.auth.oauth import build_auth_url
 from pulumi_events.exceptions import AuthenticationError, MeetupGraphQLError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import httpx
 
     from pulumi_events.auth.token_store import TokenStore
@@ -98,3 +102,13 @@ class MeetupGraphQLClient:
             raise MeetupGraphQLError(msg, errors)
 
         return body.get("data", {})
+
+    async def upload_binary(self, upload_url: str, file_path: Path, content_type: str) -> None:
+        """PUT image binary to a Meetup-provided upload URL."""
+        file_bytes = await anyio.Path(file_path).read_bytes()
+        resp = await self._http.put(
+            upload_url,
+            content=file_bytes,
+            headers={"Content-Type": content_type},
+        )
+        resp.raise_for_status()

@@ -16,6 +16,7 @@ __all__: list[str] = []
 
 
 @mcp.tool(
+    tags={"meetup", "groups", "search"},
     annotations={"readOnlyHint": True},
 )
 async def meetup_search_groups(
@@ -52,7 +53,9 @@ async def meetup_search_groups(
 
 
 @mcp.tool(
+    tags={"meetup", "groups"},
     annotations={"readOnlyHint": True},
+    timeout=120.0,
 )
 async def meetup_list_my_groups(
     ctx: Context,
