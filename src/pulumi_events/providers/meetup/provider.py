@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-import anyio
-
+from pulumi_events.exceptions import MeetupGraphQLError, ProviderError
 from pulumi_events.providers.base import ProviderCapability
 from pulumi_events.providers.meetup import queries
 from pulumi_events.providers.meetup.client import MeetupGraphQLClient
 from pulumi_events.utils import guess_image_content_type
 
 __all__ = ["MeetupProvider"]
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_PAGES = 10
 # Meetup system-wide venue for online events.
@@ -58,6 +61,64 @@ class MeetupProvider:
         return self._client.is_authenticated
 
     # ------------------------------------------------------------------
+    # Pagination helper
+    # ------------------------------------------------------------------
+
+    async def _paginate(
+        self,
+        query: str,
+        variables_fn: Callable[[str | None], dict[str, Any]],
+        response_path: Sequence[str],
+        *,
+        limit: int | None = None,
+        max_pages: int = DEFAULT_MAX_PAGES,
+    ) -> list[dict[str, Any]]:
+        """Generic relay-style pagination.
+
+        Parameters
+        ----------
+        query:
+            The GraphQL query string to execute.
+        variables_fn:
+            A callable that receives the current cursor (``None`` on the first
+            page) and returns the variables dict for that page.
+        response_path:
+            A sequence of keys to navigate from the response root to the
+            connection object (the dict containing ``edges`` and ``pageInfo``).
+        limit:
+            Optional maximum number of edges to return.
+        max_pages:
+            Safety cap on the number of pages to fetch.
+        """
+        all_edges: list[dict[str, Any]] = []
+        cursor: str | None = None
+
+        for _ in range(max_pages):
+            variables = variables_fn(cursor)
+
+            data = await self._client.execute(query, variables)
+            connection: dict[str, Any] = data
+            for key in response_path:
+                connection = connection[key]
+
+            edges = connection.get("edges", [])
+            all_edges.extend(edges)
+
+            if limit is not None and len(all_edges) >= limit:
+                all_edges = all_edges[:limit]
+                break
+
+            page_info = connection.get("pageInfo", {})
+            if not page_info.get("hasNextPage", False):
+                break
+
+            cursor = page_info.get("endCursor")
+            if not cursor:
+                break
+
+        return all_edges
+
+    # ------------------------------------------------------------------
     # User
     # ------------------------------------------------------------------
 
@@ -89,31 +150,20 @@ class MeetupProvider:
         max_pages: int = DEFAULT_MAX_PAGES,
     ) -> dict[str, Any]:
         """Auto-paginate through all groups the user belongs to."""
-        all_edges: list[dict[str, Any]] = []
-        cursor: str | None = None
 
-        for _ in range(max_pages):
-            variables: dict[str, Any] = {"first": first}
+        def _variables(cursor: str | None) -> dict[str, Any]:
+            v: dict[str, Any] = {"first": first}
             if cursor is not None:
-                variables["after"] = cursor
+                v["after"] = cursor
+            return v
 
-            data = await self._client.execute(queries.LIST_MY_GROUPS, variables)
-            connection = data["self"]["memberships"]
-            edges = connection.get("edges", [])
-            all_edges.extend(edges)
-
-            if limit is not None and len(all_edges) >= limit:
-                all_edges = all_edges[:limit]
-                break
-
-            page_info = connection.get("pageInfo", {})
-            if not page_info.get("hasNextPage", False):
-                break
-
-            cursor = page_info.get("endCursor")
-            if not cursor:
-                break
-
+        all_edges = await self._paginate(
+            queries.LIST_MY_GROUPS,
+            _variables,
+            ["self", "memberships"],
+            limit=limit,
+            max_pages=max_pages,
+        )
         groups = [edge["node"] for edge in all_edges]
         return {"total": len(groups), "groups": groups}
 
@@ -136,33 +186,22 @@ class MeetupProvider:
         max_pages: int = DEFAULT_MAX_PAGES,
     ) -> dict[str, Any]:
         """Auto-paginate through all members of a group."""
-        all_edges: list[dict[str, Any]] = []
-        cursor: str | None = None
 
-        for _ in range(max_pages):
-            variables: dict[str, Any] = {"urlname": urlname, "first": first}
+        def _variables(cursor: str | None) -> dict[str, Any]:
+            v: dict[str, Any] = {"urlname": urlname, "first": first}
             if cursor is not None:
-                variables["after"] = cursor
+                v["after"] = cursor
             if status is not None:
-                variables["status"] = [status]
+                v["status"] = [status]
+            return v
 
-            data = await self._client.execute(queries.GROUP_MEMBERS, variables)
-            connection = data["groupByUrlname"]["memberships"]
-            edges = connection.get("edges", [])
-            all_edges.extend(edges)
-
-            if limit is not None and len(all_edges) >= limit:
-                all_edges = all_edges[:limit]
-                break
-
-            page_info = connection.get("pageInfo", {})
-            if not page_info.get("hasNextPage", False):
-                break
-
-            cursor = page_info.get("endCursor")
-            if not cursor:
-                break
-
+        all_edges = await self._paginate(
+            queries.GROUP_MEMBERS,
+            _variables,
+            ["groupByUrlname", "memberships"],
+            limit=limit,
+            max_pages=max_pages,
+        )
         members = [
             {
                 "id": edge["node"].get("id"),
@@ -182,8 +221,6 @@ class MeetupProvider:
         data = await self._client.execute(queries.GROUP_MEMBER_BY_ID, variables)
         edges = data["groupByUrlname"]["memberships"]["edges"]
         if not edges:
-            from pulumi_events.exceptions import ProviderError
-
             msg = f"Member {member_id} not found in group {urlname}"
             raise ProviderError(msg)
         edge = edges[0]
@@ -205,6 +242,7 @@ class MeetupProvider:
         groups = result["groups"]
 
         sem = asyncio.Semaphore(concurrency)
+        lock = asyncio.Lock()
         found_in: list[dict[str, Any]] = []
         member_profile: dict[str, Any] | None = None
 
@@ -215,26 +253,26 @@ class MeetupProvider:
                 variables = {"urlname": urlname, "memberIds": [member_id]}
                 try:
                     data = await self._client.execute(queries.GROUP_MEMBER_BY_ID, variables)
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Skipping group %s: %s", urlname, exc)
                     return
                 edges = data["groupByUrlname"]["memberships"]["edges"]
                 if edges:
                     edge = edges[0]
-                    if member_profile is None:
-                        member_profile = edge["node"]
-                    found_in.append(
-                        {
-                            "group_urlname": urlname,
-                            "group_name": group.get("name", urlname),
-                            "membership": edge["metadata"],
-                        }
-                    )
+                    async with lock:
+                        if member_profile is None:
+                            member_profile = edge["node"]
+                        found_in.append(
+                            {
+                                "group_urlname": urlname,
+                                "group_name": group.get("name", urlname),
+                                "membership": edge["metadata"],
+                            }
+                        )
 
         await asyncio.gather(*[_check_group(g) for g in groups])
 
         if member_profile is None:
-            from pulumi_events.exceptions import ProviderError
-
             msg = f"Member {member_id} not found in any of your {len(groups)} groups"
             raise ProviderError(msg)
 
@@ -263,33 +301,22 @@ class MeetupProvider:
         max_pages: int = DEFAULT_MAX_PAGES,
     ) -> dict[str, Any]:
         """Auto-paginate through all events of a group."""
-        all_edges: list[dict[str, Any]] = []
-        cursor: str | None = None
 
-        for _ in range(max_pages):
-            variables: dict[str, Any] = {"urlname": urlname, "first": first}
+        def _variables(cursor: str | None) -> dict[str, Any]:
+            v: dict[str, Any] = {"urlname": urlname, "first": first}
             if cursor is not None:
-                variables["after"] = cursor
+                v["after"] = cursor
             if status is not None:
-                variables["status"] = status
+                v["status"] = status
+            return v
 
-            data = await self._client.execute(queries.GROUP_EVENTS, variables)
-            connection = data["groupByUrlname"]["events"]
-            edges = connection.get("edges", [])
-            all_edges.extend(edges)
-
-            if limit is not None and len(all_edges) >= limit:
-                all_edges = all_edges[:limit]
-                break
-
-            page_info = connection.get("pageInfo", {})
-            if not page_info.get("hasNextPage", False):
-                break
-
-            cursor = page_info.get("endCursor")
-            if not cursor:
-                break
-
+        all_edges = await self._paginate(
+            queries.GROUP_EVENTS,
+            _variables,
+            ["groupByUrlname", "events"],
+            limit=limit,
+            max_pages=max_pages,
+        )
         events = [edge["node"] for edge in all_edges]
         return {"total": len(events), "events": events}
 
@@ -304,9 +331,7 @@ class MeetupProvider:
         event_id: str | None = None,
     ) -> str:
         """Upload a photo and return the photo ID."""
-        from pulumi_events.exceptions import ProviderError
-
-        if not await anyio.Path(file_path).is_file():
+        if not file_path.is_file():
             msg = f"Image file not found: {file_path}"
             raise ProviderError(msg)
 
@@ -349,8 +374,6 @@ class MeetupProvider:
         # Photo upload uses singular "error" instead of "errors"
         error = result.get("error")
         if error:
-            from pulumi_events.exceptions import MeetupGraphQLError
-
             raise MeetupGraphQLError(
                 f"Mutation failed: {error.get('message', str(error))}",
                 [error],
@@ -391,20 +414,18 @@ class MeetupProvider:
             filter_input["excludedGroupIds"] = excluded_group_ids
         if not group_ids:
             filter_input["activeGroups"] = active_groups
-        endpoint = self._client._settings.meetup_graphql_endpoint_v2
         data = await self._client.execute(
             queries.CREATE_NETWORK_EVENT_FILTER,
             {"input": {"networkId": network_id, "filter": filter_input}},
-            endpoint=endpoint,
+            endpoint=self._client.endpoint_v2,
         )
         return data["createNetworkEventFilter"]["filterId"]
 
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
         # Use gql2 endpoint — supports eventType and proNetworkEvents
         # fields that are not available on gql-ext.
-        endpoint = self._client._settings.meetup_graphql_endpoint_v2
         data = await self._client.execute(
-            queries.CREATE_EVENT, {"input": kwargs}, endpoint=endpoint
+            queries.CREATE_EVENT, {"input": kwargs}, endpoint=self._client.endpoint_v2
         )
         result = data["createEvent"]
         _check_mutation_errors(result)
@@ -479,8 +500,6 @@ class MeetupProvider:
 
 def _check_mutation_errors(result: dict[str, Any]) -> None:
     """Raise MeetupGraphQLError if the mutation response contains errors."""
-    from pulumi_events.exceptions import MeetupGraphQLError
-
     errors = result.get("errors")
     if errors:
         messages = "; ".join(e.get("message", str(e)) for e in errors)

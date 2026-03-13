@@ -9,10 +9,10 @@ from typing import Any
 from fastmcp.dependencies import Depends
 from fastmcp.server.context import Context
 
-from pulumi_events.exceptions import ProviderError
 from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_luma_provider
+from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
 
@@ -63,6 +63,7 @@ def _sanitize_geo_address(geo: dict[str, Any]) -> dict[str, Any]:
         },
     },
 )
+@handle_provider_errors
 async def luma_list_events(
     ctx: Context,
     limit: int | None = None,
@@ -78,20 +79,16 @@ async def luma_list_events(
         all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching Luma events...")
-    try:
-        if all_pages:
-            return await provider.list_all_events(limit=limit)
-        return await provider.list_events(limit=limit)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if all_pages:
+        return await provider.list_all_events(limit=limit)
+    return await provider.list_events(limit=limit)
 
 
 @mcp.tool(
     tags={"luma", "events"},
     annotations={"readOnlyHint": True},
 )
+@handle_provider_errors
 async def luma_get_event(
     event_id: str,
     ctx: Context,
@@ -106,12 +103,7 @@ async def luma_get_event(
         event_id: The Luma event API ID (evt-...).
     """
     await ctx.info(f"Fetching Luma event {event_id}...")
-    try:
-        return await provider.get_event(event_id)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.get_event(event_id)
 
 
 @mcp.tool(
@@ -129,6 +121,7 @@ async def luma_get_event(
         },
     },
 )
+@handle_provider_errors
 async def luma_create_event(
     name: str,
     start_at: str,
@@ -148,7 +141,7 @@ async def luma_create_event(
 
     For physical events, ALWAYS look up the Google Maps place ID for the venue
     and pass it as geo_address_json. Do NOT pass raw Meetup venue objects or
-    manually constructed address dicts — they are unreliable with Luma's API.
+    manually constructed address dicts -- they are unreliable with Luma's API.
 
     Args:
         name: Event title.
@@ -157,19 +150,19 @@ async def luma_create_event(
         description: Event description (markdown supported).
         timezone: Timezone (e.g. America/New_York). Defaults to account timezone.
         geo_address_json: Luma venue address object. Use Google Maps place ID
-            (recommended — most reliable):
+            (recommended -- most reliable):
             {"type": "google", "place_id": "ChIJ..."}
             First search for the venue to get its place_id, then pass it here.
             Luma resolves the full address, coordinates, and map pin from the
             place_id automatically.
-            Fallback — plain address (less reliable, may fail):
+            Fallback -- plain address (less reliable, may fail):
             {"address": "123 Main St", "city": "Munich", "region": "Bavaria",
              "country": "Germany", "full_address": "123 Main St, Munich, Germany"}
             Do NOT include a "type" field with the plain address format.
         geo_latitude: Venue latitude as string (e.g. "48.1351").
         geo_longitude: Venue longitude as string (e.g. "11.5820").
         meeting_url: Online meeting URL (for virtual events).
-        visibility: Event visibility — public or private.
+        visibility: Event visibility -- public or private.
         cover_image_path: Local file path to a cover image. Uploaded to Luma CDN automatically.
     """
     input_data: dict[str, Any] = {
@@ -191,24 +184,19 @@ async def luma_create_event(
     if meeting_url is not None:
         input_data["meeting_url"] = meeting_url
 
-    try:
-        if cover_image_path is not None:
-            await ctx.report_progress(0, total=2)
-            await ctx.info("Uploading cover image to Luma CDN...")
-            cover_url = await provider.upload_image(Path(cover_image_path))
-            input_data["cover_url"] = cover_url
-            await ctx.report_progress(1, total=2)
+    if cover_image_path is not None:
+        await ctx.report_progress(0, total=2)
+        await ctx.info("Uploading cover image to Luma CDN...")
+        cover_url = await provider.upload_image(Path(cover_image_path))
+        input_data["cover_url"] = cover_url
+        await ctx.report_progress(1, total=2)
 
-        await ctx.info(f"Creating Luma event '{name}'...")
-        result = await provider.create_event(**input_data)
+    await ctx.info(f"Creating Luma event '{name}'...")
+    result = await provider.create_event(**input_data)
 
-        if cover_image_path is not None:
-            await ctx.report_progress(2, total=2)
-        return result
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if cover_image_path is not None:
+        await ctx.report_progress(2, total=2)
+    return result
 
 
 @mcp.tool(
@@ -216,6 +204,7 @@ async def luma_create_event(
     timeout=120.0,
     annotations={"idempotentHint": True},
 )
+@handle_provider_errors
 async def luma_update_event(
     event_id: str,
     ctx: Context,
@@ -242,11 +231,11 @@ async def luma_update_event(
         end_at: New end time (ISO 8601 UTC).
         timezone: New timezone.
         geo_address_json: Luma venue address object. Use Google Maps place ID
-            (recommended — most reliable):
+            (recommended -- most reliable):
             {"type": "google", "place_id": "ChIJ..."}
             First search for the venue to get its place_id, then pass it here.
             Luma resolves the full address automatically.
-            Fallback — plain address (less reliable, may fail):
+            Fallback -- plain address (less reliable, may fail):
             {"address": "123 Main St", "city": "Munich", "region": "Bavaria",
              "country": "Germany", "full_address": "123 Main St, Munich, Germany"}
             Do NOT include a "type" field with the plain address format.
@@ -278,29 +267,25 @@ async def luma_update_event(
     if visibility is not None:
         kwargs["visibility"] = visibility
 
-    try:
-        if cover_image_path is not None:
-            await ctx.report_progress(0, total=2)
-            await ctx.info("Uploading cover image to Luma CDN...")
-            cover_url = await provider.upload_image(Path(cover_image_path))
-            kwargs["cover_url"] = cover_url
-            await ctx.report_progress(1, total=2)
+    if cover_image_path is not None:
+        await ctx.report_progress(0, total=2)
+        await ctx.info("Uploading cover image to Luma CDN...")
+        cover_url = await provider.upload_image(Path(cover_image_path))
+        kwargs["cover_url"] = cover_url
+        await ctx.report_progress(1, total=2)
 
-        await ctx.info(f"Updating Luma event {event_id}...")
-        result = await provider.update_event(event_id, **kwargs)
+    await ctx.info(f"Updating Luma event {event_id}...")
+    result = await provider.update_event(event_id, **kwargs)
 
-        if cover_image_path is not None:
-            await ctx.report_progress(2, total=2)
-        return result
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if cover_image_path is not None:
+        await ctx.report_progress(2, total=2)
+    return result
 
 
 @mcp.tool(
     tags={"luma", "events"},
 )
+@handle_provider_errors
 async def luma_cancel_event(
     event_id: str,
     ctx: Context,
@@ -312,12 +297,7 @@ async def luma_cancel_event(
         event_id: The Luma event API ID (evt-...).
     """
     await ctx.info(f"Cancelling Luma event {event_id}...")
-    try:
-        return await provider.cancel_event(event_id)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.cancel_event(event_id)
 
 
 @mcp.tool(
@@ -325,6 +305,7 @@ async def luma_cancel_event(
     annotations={"readOnlyHint": True},
     timeout=120.0,
 )
+@handle_provider_errors
 async def luma_list_people(
     ctx: Context,
     limit: int | None = None,
@@ -341,14 +322,9 @@ async def luma_list_people(
         all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching Luma people...")
-    try:
-        if all_pages:
-            return await provider.list_all_people(limit=limit)
-        return await provider.list_people(limit=limit)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if all_pages:
+        return await provider.list_all_people(limit=limit)
+    return await provider.list_people(limit=limit)
 
 
 @mcp.tool(
@@ -356,6 +332,7 @@ async def luma_list_people(
     annotations={"readOnlyHint": True},
     timeout=120.0,
 )
+@handle_provider_errors
 async def luma_list_guests(
     event_id: str,
     ctx: Context,
@@ -373,11 +350,6 @@ async def luma_list_guests(
         all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info(f"Fetching guests for Luma event {event_id}...")
-    try:
-        if all_pages:
-            return await provider.list_all_guests(event_id, limit=limit)
-        return await provider.list_guests(event_id, limit=limit)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if all_pages:
+        return await provider.list_all_guests(event_id, limit=limit)
+    return await provider.list_guests(event_id, limit=limit)

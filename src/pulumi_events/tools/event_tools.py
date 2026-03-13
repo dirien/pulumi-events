@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 
-from pulumi_events.exceptions import ProviderError
-from pulumi_events.providers.meetup.provider import MeetupProvider
+from pulumi_events.providers.meetup.provider import ONLINE_EVENT_VENUE_ID, MeetupProvider
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_meetup_provider
+from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
 
@@ -51,6 +52,7 @@ __all__: list[str] = []
         },
     },
 )
+@handle_provider_errors
 async def meetup_get_event(
     event_id: str,
     ctx: Context,
@@ -66,12 +68,7 @@ async def meetup_get_event(
         event_id: The Meetup event ID (numeric string).
     """
     await ctx.info(f"Fetching Meetup event {event_id}...")
-    try:
-        return await provider.get_event(event_id)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.get_event(event_id)
 
 
 @mcp.tool(
@@ -98,6 +95,7 @@ async def meetup_get_event(
         },
     },
 )
+@handle_provider_errors
 async def meetup_list_group_events(
     group_urlname: str,
     ctx: Context,
@@ -121,19 +119,12 @@ async def meetup_list_group_events(
     status_label = status or "all"
     status_list = [status] if status is not None else None
     await ctx.info(f"Fetching {status_label} events for {group_urlname}...")
-    try:
-        if all_pages:
-            return await provider.list_all_group_events(
-                group_urlname, status=status_list, limit=limit
-            )
-        variables: dict[str, Any] = {"first": 50}
-        if status_list is not None:
-            variables["status"] = status_list
-        return await provider.list_group_events(group_urlname, **variables)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if all_pages:
+        return await provider.list_all_group_events(group_urlname, status=status_list, limit=limit)
+    variables: dict[str, Any] = {"first": 50}
+    if status_list is not None:
+        variables["status"] = status_list
+    return await provider.list_group_events(group_urlname, **variables)
 
 
 @mcp.tool(
@@ -150,6 +141,7 @@ async def meetup_list_group_events(
         },
     },
 )
+@handle_provider_errors
 async def meetup_create_event(
     group_urlname: str,
     title: str,
@@ -215,8 +207,6 @@ async def meetup_create_event(
     if event_type is not None and event_type.upper() == "ONLINE":
         # Meetup's CreateEventInput/EditEventInput don't expose eventType.
         # Setting the system-wide "Online event" venue makes the event online.
-        from pulumi_events.providers.meetup.provider import ONLINE_EVENT_VENUE_ID
-
         input_data["venueId"] = venue_id or ONLINE_EVENT_VENUE_ID
     elif venue_id is not None:
         input_data["venueId"] = venue_id
@@ -230,38 +220,34 @@ async def meetup_create_event(
         input_data["topics"] = topics
 
     await ctx.info(f"Creating event '{title}' in {group_urlname} (status={publish_status})...")
-    try:
-        # For Pro network events, auto-create the filter.
-        if pro_network_urlname is not None:
-            await ctx.info(f"Creating network event filter for '{pro_network_urlname}'...")
-            filter_id = await provider.create_network_event_filter(
-                pro_network_urlname,
-                group_ids=pro_network_group_ids,
-                excluded_group_ids=pro_network_excluded_group_ids,
-            )
-            pro_network: dict[str, Any] = {"filterId": filter_id}
-            if pro_network_timezone is not None:
-                pro_network["timezone"] = pro_network_timezone
-            input_data["proNetworkEvents"] = pro_network
 
-        # Upload featured image BEFORE creating the event so it is
-        # included in the CreateEventInput and propagates to all
-        # network copies.
-        if featured_image_path is not None:
-            await ctx.info("Uploading featured image...")
-            image_path = Path(featured_image_path)
-            photo_id = await provider.upload_event_photo(
-                group_urlname,
-                image_path,
-            )
-            input_data["featuredPhotoId"] = int(photo_id)
+    # For Pro network events, auto-create the filter.
+    if pro_network_urlname is not None:
+        await ctx.info(f"Creating network event filter for '{pro_network_urlname}'...")
+        filter_id = await provider.create_network_event_filter(
+            pro_network_urlname,
+            group_ids=pro_network_group_ids,
+            excluded_group_ids=pro_network_excluded_group_ids,
+        )
+        pro_network: dict[str, Any] = {"filterId": filter_id}
+        if pro_network_timezone is not None:
+            pro_network["timezone"] = pro_network_timezone
+        input_data["proNetworkEvents"] = pro_network
 
-        event = await provider.create_event(**input_data)
-        return event
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
+    # Upload featured image BEFORE creating the event so it is
+    # included in the CreateEventInput and propagates to all
+    # network copies.
+    if featured_image_path is not None:
+        await ctx.info("Uploading featured image...")
+        image_path = Path(featured_image_path)
+        photo_id = await provider.upload_event_photo(
+            group_urlname,
+            image_path,
+        )
+        input_data["featuredPhotoId"] = int(photo_id)
 
-        raise ToolError(str(exc)) from exc
+    event = await provider.create_event(**input_data)
+    return event
 
 
 @mcp.tool(
@@ -279,6 +265,7 @@ async def meetup_create_event(
         },
     },
 )
+@handle_provider_errors
 async def meetup_edit_event(
     event_id: str,
     ctx: Context,
@@ -336,38 +323,32 @@ async def meetup_edit_event(
     if topics is not None:
         kwargs["topics"] = topics
 
-    try:
-        if featured_image_path is not None:
-            if group_urlname is None:
-                from fastmcp.exceptions import ToolError
+    if featured_image_path is not None:
+        if group_urlname is None:
+            raise ToolError("group_urlname is required when setting featured_image_path")
+        await ctx.report_progress(0, total=2)
+        await ctx.info("Uploading featured image...")
+        image_path = Path(featured_image_path)
+        photo_id = await provider.upload_event_photo(
+            group_urlname,
+            image_path,
+            event_id=event_id,
+        )
+        kwargs["featuredPhotoId"] = int(photo_id)
+        await ctx.report_progress(1, total=2)
 
-                raise ToolError("group_urlname is required when setting featured_image_path")
-            await ctx.report_progress(0, total=2)
-            await ctx.info("Uploading featured image...")
-            image_path = Path(featured_image_path)
-            photo_id = await provider.upload_event_photo(
-                group_urlname,
-                image_path,
-                event_id=event_id,
-            )
-            kwargs["featuredPhotoId"] = photo_id
-            await ctx.report_progress(1, total=2)
+    await ctx.info(f"Editing event {event_id}...")
+    result = await provider.edit_event(event_id, **kwargs)
 
-        await ctx.info(f"Editing event {event_id}...")
-        result = await provider.edit_event(event_id, **kwargs)
-
-        if featured_image_path is not None:
-            await ctx.report_progress(2, total=2)
-        return result
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if featured_image_path is not None:
+        await ctx.report_progress(2, total=2)
+    return result
 
 
 @mcp.tool(
     tags={"meetup", "events"},
 )
+@handle_provider_errors
 async def meetup_event_action(
     event_id: str,
     action: Literal["delete", "publish", "announce", "close_rsvps", "open_rsvps"],
@@ -381,9 +362,4 @@ async def meetup_event_action(
         action: One of: delete, publish, announce, close_rsvps, open_rsvps.
     """
     await ctx.info(f"Performing '{action}' on event {event_id}...")
-    try:
-        return await provider.event_action(event_id, action)
-    except (ProviderError, ValueError) as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.event_action(event_id, action)

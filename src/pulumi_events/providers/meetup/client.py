@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import webbrowser
 from typing import TYPE_CHECKING, Any
 
 import anyio
+import httpx
 
 from pulumi_events.auth.oauth import build_auth_url
 from pulumi_events.exceptions import AuthenticationError, MeetupGraphQLError
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import httpx
 
     from pulumi_events.auth.token_store import TokenStore
     from pulumi_events.settings import Settings
@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 _AUTH_POLL_INTERVAL = 1.0
 _AUTH_TIMEOUT = 120.0
+
+# Retry settings for transient HTTP errors (429 rate-limit and 5xx server errors).
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 1.0  # seconds; actual delays are 1s, 2s, 4s
 
 
 class MeetupGraphQLClient:
@@ -45,6 +49,11 @@ class MeetupGraphQLClient:
     def is_authenticated(self) -> bool:
         return self._token_store.is_authenticated
 
+    @property
+    def endpoint_v2(self) -> str:
+        """The Meetup ``gql2`` endpoint URL for v2 GraphQL operations."""
+        return self._settings.meetup_graphql_endpoint_v2
+
     async def _ensure_authenticated(self) -> str:
         """Return a valid access token, auto-opening browser if configured."""
         try:
@@ -55,13 +64,15 @@ class MeetupGraphQLClient:
 
         # Local mode — open browser and wait for OAuth callback
         logger.info("Not authenticated — opening browser for Meetup login")
-        url = await build_auth_url(self._settings.meetup_client_id, self._settings)
+        url = await build_auth_url(
+            self._settings.meetup_client_id.get_secret_value(), self._settings
+        )
         webbrowser.open(url)
 
-        elapsed = 0.0
-        while elapsed < _AUTH_TIMEOUT:
+        # Use monotonic clock for accurate wall-clock timeout measurement.
+        deadline = time.monotonic() + _AUTH_TIMEOUT
+        while time.monotonic() < deadline:
             await asyncio.sleep(_AUTH_POLL_INTERVAL)
-            elapsed += _AUTH_POLL_INTERVAL
             if self._token_store.is_authenticated:
                 return await self._token_store.get_access_token(self._http)
 
@@ -77,8 +88,8 @@ class MeetupGraphQLClient:
     ) -> dict[str, Any]:
         """Execute a GraphQL query/mutation and return the ``data`` dict.
 
-        When running locally, auto-opens the browser for OAuth if needed.
-        When remote, raises AuthenticationError for the LLM to handle.
+        Retries automatically on transient HTTP errors (429 rate-limit and
+        5xx server errors) with exponential backoff.
 
         Args:
             query: GraphQL query or mutation string.
@@ -88,19 +99,50 @@ class MeetupGraphQLClient:
         Raises:
             MeetupGraphQLError: If the response contains ``errors``.
             AuthenticationError: If not authenticated (remote only).
+            httpx.HTTPStatusError: If a non-retryable HTTP error persists.
         """
         token = await self._ensure_authenticated()
         payload: dict[str, Any] = {"query": query}
-        if variables:
+        if variables is not None:
             payload["variables"] = variables
 
         url = endpoint or self._settings.meetup_graphql_endpoint
-        resp = await self._http.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        resp.raise_for_status()
+        last_exc: httpx.HTTPStatusError | None = None
+        resp: httpx.Response | None = None
+
+        for attempt in range(_MAX_RETRIES):
+            resp = await self._http.post(
+                url,
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            if resp.status_code == 429 or resp.status_code >= 500:
+                last_exc = None
+                try:
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    last_exc = exc
+
+                if attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_BACKOFF_BASE * (2**attempt)
+                    logger.warning(
+                        "Meetup API returned %d, retrying in %.1fs (attempt %d/%d)",
+                        resp.status_code,
+                        delay,
+                        attempt + 1,
+                        _MAX_RETRIES,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                assert last_exc is not None  # noqa: S101
+                raise last_exc
+
+            resp.raise_for_status()
+            break
+
+        assert resp is not None  # noqa: S101 — loop always executes at least once
         body = resp.json()
 
         if "errors" in body:
@@ -112,7 +154,12 @@ class MeetupGraphQLClient:
         return body.get("data", {})
 
     async def upload_binary(self, upload_url: str, file_path: Path, content_type: str) -> None:
-        """PUT image binary to a Meetup-provided upload URL."""
+        """PUT image binary to a Meetup-provided upload URL.
+
+        No ``Authorization`` header is included because Meetup returns
+        pre-signed upload URLs from the ``createGroupEventPhoto`` mutation.
+        The URL itself embeds the necessary credentials.
+        """
         file_bytes = await anyio.Path(file_path).read_bytes()
         logger.info(
             "Uploading %d bytes to %s (Content-Type: %s)",

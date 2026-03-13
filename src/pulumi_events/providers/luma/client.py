@@ -30,7 +30,7 @@ class LumaClient:
     def __init__(self, http: httpx.AsyncClient, settings: Settings) -> None:
         self._http = http
         self._base = settings.luma_api_endpoint
-        self._api_key = settings.luma_api_key
+        self._api_key = settings.luma_api_key.get_secret_value()
 
     @property
     def is_authenticated(self) -> bool:

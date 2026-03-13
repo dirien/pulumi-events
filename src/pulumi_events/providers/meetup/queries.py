@@ -28,6 +28,27 @@ __all__ = [
     "UPLOAD_EVENT_PHOTO",
 ]
 
+# Shared field fragments
+_MEMBER_FIELDS = """
+          id
+          name
+          bio
+          city
+          country
+          memberUrl
+          username
+          isOrganizer
+          memberPhoto {
+            baseUrl
+          }"""
+
+_MEMBERSHIP_META_FIELDS = """
+          role
+          joinTime
+          status
+          bio
+          lastAccessTime"""
+
 # ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
@@ -268,11 +289,21 @@ query(
   proNetwork(urlname: $urlname) {
     eventsSearch(input: { filter: { query: $query }, first: $first, after: $after }) {
       totalCount
-      pageInfo { hasNextPage endCursor }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
         node {
-          id title dateTime eventUrl status
-          group { name urlname }
+          id
+          title
+          dateTime
+          eventUrl
+          status
+          group {
+            name
+            urlname
+          }
         }
       }
     }
@@ -281,15 +312,29 @@ query(
 """
 
 NETWORK_SEARCH_GROUPS = """
-query($urlname: ID!, $query: String, $first: Int, $after: String) {
+query(
+  $urlname: ID!,
+  $query: String,
+  $first: Int,
+  $after: String
+) {
   proNetwork(urlname: $urlname) {
     groupsSearch(input: { filter: { query: $query }, first: $first, after: $after }) {
       totalCount
-      pageInfo { hasNextPage endCursor }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
         node {
-          id name urlname city country
-          memberships { totalCount }
+          id
+          name
+          urlname
+          city
+          country
+          memberships {
+            totalCount
+          }
         }
       }
     }
@@ -309,14 +354,20 @@ query(
   proNetwork(urlname: $urlname) {
     membersSearch(input: {
       filter: $filter,
-      first: $first, after: $after,
-      sort: $sort, desc: $desc
+      first: $first,
+      after: $after,
+      sort: $sort,
+      desc: $desc
     }) {
       totalCount
-      pageInfo { hasNextPage endCursor }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
         node {
-          id name
+          id
+          name
         }
         metadata {
           groupsCount
@@ -330,77 +381,51 @@ query(
 }
 """
 
-GROUP_MEMBERS = """
+GROUP_MEMBERS = f"""
 query(
   $urlname: String!,
   $first: Int,
   $after: String,
   $status: [MembershipStatus!]
-) {
-  groupByUrlname(urlname: $urlname) {
-    memberships(first: $first, after: $after, filter: { status: $status }) {
+) {{
+  groupByUrlname(urlname: $urlname) {{
+    memberships(first: $first, after: $after, filter: {{ status: $status }}) {{
       totalCount
-      pageInfo {
+      pageInfo {{
         hasNextPage
         endCursor
-      }
-      edges {
-        node {
-          id
-          name
-          bio
-          city
-          country
-          memberUrl
-          username
-          isOrganizer
-          memberPhoto {
-            baseUrl
-          }
-        }
-        metadata {
-          role
-          joinTime
-          status
-          bio
-          lastAccessTime
-        }
-      }
-    }
-  }
-}
+      }}
+      edges {{
+        node {{{_MEMBER_FIELDS}
+        }}
+        metadata {{{_MEMBERSHIP_META_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
 """
 
-GROUP_MEMBER_BY_ID = """
-query($urlname: String!, $memberIds: [ID!]) {
-  groupByUrlname(urlname: $urlname) {
-    memberships(filter: { memberIds: $memberIds }) {
-      edges {
-        node {
-          id
-          name
-          bio
-          city
-          country
-          memberUrl
-          username
-          isOrganizer
-          memberPhoto {
-            baseUrl
-          }
-        }
-        metadata {
-          role
-          joinTime
-          status
-          bio
-          lastAccessTime
-        }
-      }
-    }
-  }
-}
+GROUP_MEMBER_BY_ID = f"""
+query($urlname: String!, $memberIds: [ID!]) {{
+  groupByUrlname(urlname: $urlname) {{
+    memberships(filter: {{ memberIds: $memberIds }}) {{
+      edges {{
+        node {{{_MEMBER_FIELDS}
+        }}
+        metadata {{{_MEMBERSHIP_META_FIELDS}
+        }}
+      }}
+    }}
+  }}
+}}
 """
+
+# NOTE on error field shapes across mutations:
+# Most mutations return `errors { message code }` (plural list).
+# createEvent, editEvent, createVenue also include `field`.
+# UPLOAD_EVENT_PHOTO uses singular `error { message code }`.
+# This reflects the actual Meetup API schema.
 
 # ---------------------------------------------------------------------------
 # Mutations

@@ -7,10 +7,10 @@ from typing import Any
 from fastmcp.dependencies import Depends
 from fastmcp.server.context import Context
 
-from pulumi_events.exceptions import ProviderError
 from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_meetup_provider
+from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
 
@@ -18,6 +18,7 @@ __all__: list[str] = []
 @mcp.tool(
     tags={"meetup", "venues"},
 )
+@handle_provider_errors
 async def meetup_create_venue(
     group_urlname: str,
     name: str,
@@ -57,9 +58,4 @@ async def meetup_create_venue(
         input_data["lng"] = lon
 
     await ctx.info(f"Creating venue '{name}' in {city}...")
-    try:
-        return await provider.create_venue(**input_data)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.create_venue(**input_data)

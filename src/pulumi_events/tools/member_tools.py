@@ -11,6 +11,7 @@ from pulumi_events.exceptions import ProviderError
 from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_meetup_provider
+from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
 
@@ -20,6 +21,7 @@ __all__: list[str] = []
     annotations={"readOnlyHint": True},
     timeout=120.0,
 )
+@handle_provider_errors
 async def meetup_list_group_members(
     group_urlname: str,
     ctx: Context,
@@ -39,23 +41,19 @@ async def meetup_list_group_members(
         all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info(f"Fetching members of '{group_urlname}'...")
-    try:
-        if all_pages:
-            return await provider.list_all_group_members(group_urlname, status=status, limit=limit)
-        variables: dict[str, Any] = {"first": 200}
-        if status is not None:
-            variables["status"] = [status]
-        return await provider.list_group_members(group_urlname, **variables)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if all_pages:
+        return await provider.list_all_group_members(group_urlname, status=status, limit=limit)
+    variables: dict[str, Any] = {"first": 200}
+    if status is not None:
+        variables["status"] = [status]
+    return await provider.list_group_members(group_urlname, **variables)
 
 
 @mcp.tool(
     tags={"meetup", "members"},
     annotations={"readOnlyHint": True},
 )
+@handle_provider_errors
 async def meetup_get_member(
     group_urlname: str,
     member_id: str,
@@ -72,12 +70,7 @@ async def meetup_get_member(
         member_id: The Meetup member ID.
     """
     await ctx.info(f"Fetching member {member_id} in '{group_urlname}'...")
-    try:
-        return await provider.get_group_member(group_urlname, member_id)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.get_group_member(group_urlname, member_id)
 
 
 @mcp.tool(
@@ -85,6 +78,7 @@ async def meetup_get_member(
     annotations={"readOnlyHint": True},
     timeout=120.0,
 )
+@handle_provider_errors
 async def meetup_find_member(
     member_id: str,
     ctx: Context,

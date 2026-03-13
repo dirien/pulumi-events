@@ -70,7 +70,7 @@ async def meetup_login(
     The redirect goes to the MCP server's ``/auth/meetup/callback`` route,
     which exchanges the code and caches the token automatically.
     """
-    url = await build_auth_url(settings.meetup_client_id, settings)
+    url = await build_auth_url(settings.meetup_client_id.get_secret_value(), settings)
     await ctx.info(f"Authorize here: {url}")
     return {
         "auth_url": url,

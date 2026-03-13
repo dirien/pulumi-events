@@ -74,14 +74,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
 
 _boot_settings = Settings()
 _auth: StaticTokenVerifier | GoogleProvider | None = None
-if _boot_settings.google_client_id and _boot_settings.google_client_secret:
+if (
+    _boot_settings.google_client_id.get_secret_value()
+    and _boot_settings.google_client_secret.get_secret_value()
+):
     _host = (
         "localhost" if _boot_settings.server_host == "127.0.0.1" else _boot_settings.server_host
     )
     _base_url = f"http://{_host}:{_boot_settings.server_port}"
     _auth = GoogleProvider(
-        client_id=_boot_settings.google_client_id,
-        client_secret=_boot_settings.google_client_secret,
+        client_id=_boot_settings.google_client_id.get_secret_value(),
+        client_secret=_boot_settings.google_client_secret.get_secret_value(),
         base_url=_base_url,
         required_scopes=[
             "openid",
@@ -90,10 +93,10 @@ if _boot_settings.google_client_id and _boot_settings.google_client_secret:
         ],
         require_authorization_consent=False,
     )
-elif _boot_settings.auth_token:
+elif _boot_settings.auth_token.get_secret_value():
     _auth = StaticTokenVerifier(
         tokens={
-            _boot_settings.auth_token: {
+            _boot_settings.auth_token.get_secret_value(): {
                 "client_id": "pulumi-events-client",
                 "scopes": ["full"],
             },
@@ -169,7 +172,10 @@ async def meetup_callback(request: Request) -> Response:
     try:
         assert _settings is not None  # noqa: S101
         token_data = await exchange_code(
-            code, _settings.meetup_client_id, _settings.meetup_client_secret, _settings
+            code,
+            _settings.meetup_client_id.get_secret_value(),
+            _settings.meetup_client_secret.get_secret_value(),
+            _settings,
         )
         assert _token_store is not None  # noqa: S101
         _token_store.store_token(token_data)

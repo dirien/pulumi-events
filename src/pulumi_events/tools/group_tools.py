@@ -7,10 +7,10 @@ from typing import Any
 from fastmcp.dependencies import Depends
 from fastmcp.server.context import Context
 
-from pulumi_events.exceptions import ProviderError
 from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_meetup_provider
+from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
 
@@ -19,6 +19,7 @@ __all__: list[str] = []
     tags={"meetup", "groups", "search"},
     annotations={"readOnlyHint": True},
 )
+@handle_provider_errors
 async def meetup_search_groups(
     query: str,
     lat: float,
@@ -44,12 +45,7 @@ async def meetup_search_groups(
         variables["after"] = after
 
     await ctx.info(f"Searching Meetup groups for '{query}'...")
-    try:
-        return await provider.search_groups(**variables)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.search_groups(**variables)
 
 
 @mcp.tool(
@@ -57,6 +53,7 @@ async def meetup_search_groups(
     annotations={"readOnlyHint": True},
     timeout=120.0,
 )
+@handle_provider_errors
 async def meetup_list_my_groups(
     ctx: Context,
     limit: int | None = None,
@@ -72,11 +69,6 @@ async def meetup_list_my_groups(
         all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching your Meetup groups...")
-    try:
-        if all_pages:
-            return await provider.list_all_my_groups(limit=limit)
-        return await provider.list_my_groups(first=50)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    if all_pages:
+        return await provider.list_all_my_groups(limit=limit)
+    return await provider.list_my_groups(first=50)

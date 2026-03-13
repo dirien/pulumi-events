@@ -7,11 +7,11 @@ from typing import Any, Literal
 from fastmcp.dependencies import Depends
 from fastmcp.server.context import Context
 
-from pulumi_events.exceptions import ProviderError
 from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.server import mcp
 from pulumi_events.settings import Settings
 from pulumi_events.tools._deps import get_meetup_provider, get_settings
+from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
 
@@ -20,6 +20,7 @@ __all__: list[str] = []
     tags={"meetup", "events", "search"},
     annotations={"readOnlyHint": True},
 )
+@handle_provider_errors
 async def meetup_search_events(
     query: str,
     lat: float,
@@ -57,18 +58,14 @@ async def meetup_search_events(
         variables["after"] = after
 
     await ctx.info(f"Searching Meetup events for '{query}'...")
-    try:
-        return await provider.search_events(**variables)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.search_events(**variables)
 
 
 @mcp.tool(
     tags={"meetup", "network", "search"},
     annotations={"readOnlyHint": True},
 )
+@handle_provider_errors
 async def meetup_network_search(
     search_type: Literal["events", "groups", "members"],
     ctx: Context,
@@ -87,11 +84,11 @@ async def meetup_network_search(
 
     For member searches, results include metadata (groupsCount,
     eventsAttended, role, isOrganizer). Note: Meetup's sort by
-    groupsCount is unreliable — use role filters instead to find
+    groupsCount is unreliable -- use role filters instead to find
     key members (e.g. roles=["ORGANIZER"]).
 
     Args:
-        search_type: What to search for — events, groups, or members.
+        search_type: What to search for -- events, groups, or members.
         network_urlname: Pro network URL name (defaults to configured setting).
         query: Optional search term (name for members, title for events).
         roles: Member role filter (ORGANIZER, COORGANIZER, MEMBER).
@@ -125,9 +122,4 @@ async def meetup_network_search(
         variables["after"] = after
 
     await ctx.info(f"Searching {search_type} in network '{urlname}'...")
-    try:
-        return await provider.network_search(urlname, **variables)
-    except ProviderError as exc:
-        from fastmcp.exceptions import ToolError
-
-        raise ToolError(str(exc)) from exc
+    return await provider.network_search(urlname, **variables)

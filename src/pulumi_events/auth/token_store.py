@@ -89,8 +89,8 @@ class TokenStore:
             msg = "No refresh token available — re-authenticate with meetup_login"
             raise AuthenticationError(msg)
 
-        client_id = self._settings.meetup_client_id
-        client_secret = self._settings.meetup_client_secret
+        client_id = self._settings.meetup_client_id.get_secret_value()
+        client_secret = self._settings.meetup_client_secret.get_secret_value()
 
         resp = await http.post(
             self._settings.meetup_token_endpoint,
