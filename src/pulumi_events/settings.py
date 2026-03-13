@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     meetup_client_id: str = ""
     meetup_client_secret: str = ""
     meetup_graphql_endpoint: str = "https://api.meetup.com/gql-ext"
+    meetup_graphql_endpoint_v2: str = "https://api.meetup.com/gql2"
     luma_api_key: str = ""
     luma_api_endpoint: str = "https://public-api.luma.com/v1"
     meetup_auth_endpoint: str = "https://secure.meetup.com/oauth2/authorize"

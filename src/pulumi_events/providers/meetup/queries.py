@@ -6,6 +6,7 @@ __all__ = [
     "ANNOUNCE_EVENT",
     "CLOSE_EVENT_RSVPS",
     "CREATE_EVENT",
+    "CREATE_NETWORK_EVENT_FILTER",
     "CREATE_VENUE",
     "DELETE_EVENT",
     "EVENT_BY_ID",
@@ -533,10 +534,18 @@ mutation($input: GroupEventPhotoCreateInput!) {
     photo {
       id
     }
-    errors {
+    error {
       message
       code
     }
+  }
+}
+"""
+
+CREATE_NETWORK_EVENT_FILTER = """
+mutation($input: CreateNetworkEventFilterInput!) {
+  createNetworkEventFilter(input: $input) {
+    filterId
   }
 }
 """

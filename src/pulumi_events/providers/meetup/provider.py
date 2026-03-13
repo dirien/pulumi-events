@@ -16,6 +16,8 @@ from pulumi_events.utils import guess_image_content_type
 __all__ = ["MeetupProvider"]
 
 DEFAULT_MAX_PAGES = 10
+# Meetup system-wide venue for online events.
+ONLINE_EVENT_VENUE_ID = "26906060"
 
 
 class MeetupProvider:
@@ -295,7 +297,12 @@ class MeetupProvider:
         data = await self._client.execute(queries.SEARCH_EVENTS, kwargs)
         return data["eventSearch"]
 
-    async def upload_event_photo(self, group_urlname: str, file_path: Path) -> str:
+    async def upload_event_photo(
+        self,
+        group_urlname: str,
+        file_path: Path,
+        event_id: str | None = None,
+    ) -> str:
         """Upload a photo and return the photo ID."""
         from pulumi_events.exceptions import ProviderError
 
@@ -307,12 +314,47 @@ class MeetupProvider:
         group_id = group["id"]
         content_type = guess_image_content_type(file_path)
 
+        # GraphQL ContentType enum expects PNG/JPEG/GIF, not MIME types
+        mime_to_enum = {
+            "image/png": "PNG",
+            "image/jpeg": "JPEG",
+            "image/gif": "GIF",
+        }
+        gql_content_type = mime_to_enum.get(content_type)
+        if gql_content_type is None:
+            msg = (
+                f"Unsupported image type for Meetup upload: "
+                f"{content_type}. Supported: PNG, JPEG, GIF."
+            )
+            raise ProviderError(msg)
+
+        # Use GROUP_PHOTO when no eventId (pre-creation upload).
+        # EVENT_PHOTO requires eventId but GROUP_PHOTO does not,
+        # and the photo can still be referenced as featuredPhotoId.
+        photo_type = "EVENT_PHOTO" if event_id is not None else "GROUP_PHOTO"
+        upload_input: dict[str, Any] = {
+            "groupId": group_id,
+            "contentType": gql_content_type,
+            "photoType": photo_type,
+            "setAsMain": True,
+        }
+        if event_id is not None:
+            upload_input["eventId"] = event_id
+
         data = await self._client.execute(
             queries.UPLOAD_EVENT_PHOTO,
-            {"input": {"groupId": group_id, "contentType": content_type}},
+            {"input": upload_input},
         )
         result = data["createGroupEventPhoto"]
-        _check_mutation_errors(result)
+        # Photo upload uses singular "error" instead of "errors"
+        error = result.get("error")
+        if error:
+            from pulumi_events.exceptions import MeetupGraphQLError
+
+            raise MeetupGraphQLError(
+                f"Mutation failed: {error.get('message', str(error))}",
+                [error],
+            )
 
         upload_url = result["uploadUrl"]
         photo_id = result["photo"]["id"]
@@ -320,13 +362,61 @@ class MeetupProvider:
         await self._client.upload_binary(upload_url, file_path, content_type)
         return photo_id
 
+    async def create_network_event_filter(
+        self,
+        network_urlname: str,
+        *,
+        group_ids: list[str] | None = None,
+        excluded_group_ids: list[str] | None = None,
+        active_groups: bool = True,
+    ) -> str:
+        """Create a network event filter and return the filter ID.
+
+        Must be called on gql2 before creating a Pro network event.
+
+        Args:
+            network_urlname: URL name of the Pro network.
+            group_ids: Specific group IDs to include. When provided,
+                only these groups receive the network event.
+            excluded_group_ids: Group IDs to exclude from the event.
+            active_groups: Include all active groups (default True).
+                Ignored when *group_ids* is provided.
+        """
+        network = await self.get_network(network_urlname)
+        network_id = network["id"]
+        filter_input: dict[str, Any] = {}
+        if group_ids is not None:
+            filter_input["groupIds"] = group_ids
+        if excluded_group_ids is not None:
+            filter_input["excludedGroupIds"] = excluded_group_ids
+        if not group_ids:
+            filter_input["activeGroups"] = active_groups
+        endpoint = self._client._settings.meetup_graphql_endpoint_v2
+        data = await self._client.execute(
+            queries.CREATE_NETWORK_EVENT_FILTER,
+            {"input": {"networkId": network_id, "filter": filter_input}},
+            endpoint=endpoint,
+        )
+        return data["createNetworkEventFilter"]["filterId"]
+
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
-        data = await self._client.execute(queries.CREATE_EVENT, {"input": kwargs})
+        # Use gql2 endpoint — supports eventType and proNetworkEvents
+        # fields that are not available on gql-ext.
+        endpoint = self._client._settings.meetup_graphql_endpoint_v2
+        data = await self._client.execute(
+            queries.CREATE_EVENT, {"input": kwargs}, endpoint=endpoint
+        )
         result = data["createEvent"]
         _check_mutation_errors(result)
         return result["event"]
 
     async def edit_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]:
+        # EditEventInput doesn't support eventType on any endpoint.
+        # Map ONLINE to the system-wide online venue instead.
+        event_type = kwargs.pop("eventType", None)
+        if event_type is not None and event_type.upper() == "ONLINE":
+            kwargs.setdefault("venueId", ONLINE_EVENT_VENUE_ID)
+
         kwargs["eventId"] = event_id
         data = await self._client.execute(queries.UPDATE_EVENT, {"input": kwargs})
         result = data["editEvent"]

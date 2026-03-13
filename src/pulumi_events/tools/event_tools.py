@@ -164,12 +164,21 @@ async def meetup_create_event(
     question: str | None = None,
     hosts: list[str] | None = None,
     topics: list[str] | None = None,
-    pro_network_filter_id: str | None = None,
+    pro_network_urlname: str | None = None,
     pro_network_timezone: str | None = None,
+    pro_network_group_ids: list[str] | None = None,
+    pro_network_excluded_group_ids: list[str] | None = None,
     featured_image_path: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
-    """Create a Meetup event (defaults to DRAFT for safety).
+    """Create a Meetup event. For Pro network events the event is created
+    and published across all selected groups in a single API call.
+
+    For Pro network events, provide pro_network_urlname. The tool will
+    automatically create the network event filter and propagate the
+    event across all selected groups in the network. When publish_status
+    is PUBLISHED the event goes live in every group immediately — no
+    need to publish each sub-group copy individually.
 
     Args:
         group_urlname: URL name of the group hosting the event.
@@ -180,12 +189,19 @@ async def meetup_create_event(
         event_type: PHYSICAL or ONLINE.
         venue_id: Venue ID (from meetup_create_venue).
         publish_status: DRAFT or PUBLISHED (defaults to DRAFT).
+            For Pro network events use PUBLISHED to publish across all
+            groups in one shot.
         rsvp_limit: Maximum attendees (0 = unlimited).
         question: RSVP question.
         hosts: List of host member IDs.
         topics: List of topic IDs.
-        pro_network_filter_id: Pro network filter ID for network-wide events.
-        pro_network_timezone: Timezone for Pro network events.
+        pro_network_urlname: Pro network URL name (e.g. "pugs"). Automatically
+            creates a network event filter and propagates across all active groups.
+        pro_network_timezone: Timezone for Pro network events (e.g. "US/Eastern").
+        pro_network_group_ids: Specific group IDs to include in the network
+            event. When omitted, all active groups in the network are included.
+        pro_network_excluded_group_ids: Group IDs to exclude from the network
+            event. Useful for skipping specific chapters.
         featured_image_path: Local file path to a featured image. Uploaded and set automatically.
     """
     input_data: dict[str, Any] = {
@@ -196,9 +212,13 @@ async def meetup_create_event(
         "duration": duration,
         "publishStatus": publish_status,
     }
-    if event_type is not None:
-        input_data["eventType"] = event_type
-    if venue_id is not None:
+    if event_type is not None and event_type.upper() == "ONLINE":
+        # Meetup's CreateEventInput/EditEventInput don't expose eventType.
+        # Setting the system-wide "Online event" venue makes the event online.
+        from pulumi_events.providers.meetup.provider import ONLINE_EVENT_VENUE_ID
+
+        input_data["venueId"] = venue_id or ONLINE_EVENT_VENUE_ID
+    elif venue_id is not None:
         input_data["venueId"] = venue_id
     if rsvp_limit is not None:
         input_data["rsvpSettings"] = {"rsvpLimit": rsvp_limit}
@@ -208,28 +228,35 @@ async def meetup_create_event(
         input_data["hosts"] = hosts
     if topics is not None:
         input_data["topics"] = topics
-    if pro_network_filter_id is not None:
-        input_data["proNetworkFilterId"] = pro_network_filter_id
-    if pro_network_timezone is not None:
-        input_data["proNetworkTimezone"] = pro_network_timezone
 
     await ctx.info(f"Creating event '{title}' in {group_urlname} (status={publish_status})...")
     try:
-        if featured_image_path is not None:
-            await ctx.report_progress(0, total=3)
+        # For Pro network events, auto-create the filter.
+        if pro_network_urlname is not None:
+            await ctx.info(f"Creating network event filter for '{pro_network_urlname}'...")
+            filter_id = await provider.create_network_event_filter(
+                pro_network_urlname,
+                group_ids=pro_network_group_ids,
+                excluded_group_ids=pro_network_excluded_group_ids,
+            )
+            pro_network: dict[str, Any] = {"filterId": filter_id}
+            if pro_network_timezone is not None:
+                pro_network["timezone"] = pro_network_timezone
+            input_data["proNetworkEvents"] = pro_network
 
-        event = await provider.create_event(**input_data)
-
+        # Upload featured image BEFORE creating the event so it is
+        # included in the CreateEventInput and propagates to all
+        # network copies.
         if featured_image_path is not None:
-            await ctx.report_progress(1, total=3)
             await ctx.info("Uploading featured image...")
             image_path = Path(featured_image_path)
-            photo_id = await provider.upload_event_photo(group_urlname, image_path)
-            await ctx.report_progress(2, total=3)
-            await ctx.info("Setting featured photo on event...")
-            event = await provider.edit_event(event["id"], featuredPhotoId=photo_id)
-            await ctx.report_progress(3, total=3)
+            photo_id = await provider.upload_event_photo(
+                group_urlname,
+                image_path,
+            )
+            input_data["featuredPhotoId"] = int(photo_id)
 
+        event = await provider.create_event(**input_data)
         return event
     except ProviderError as exc:
         from fastmcp.exceptions import ToolError
@@ -318,7 +345,11 @@ async def meetup_edit_event(
             await ctx.report_progress(0, total=2)
             await ctx.info("Uploading featured image...")
             image_path = Path(featured_image_path)
-            photo_id = await provider.upload_event_photo(group_urlname, image_path)
+            photo_id = await provider.upload_event_photo(
+                group_urlname,
+                image_path,
+                event_id=event_id,
+            )
             kwargs["featuredPhotoId"] = photo_id
             await ctx.report_progress(1, total=2)
 

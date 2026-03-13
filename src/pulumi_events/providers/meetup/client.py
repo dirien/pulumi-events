@@ -72,11 +72,18 @@ class MeetupGraphQLClient:
         self,
         query: str,
         variables: dict[str, Any] | None = None,
+        *,
+        endpoint: str | None = None,
     ) -> dict[str, Any]:
         """Execute a GraphQL query/mutation and return the ``data`` dict.
 
         When running locally, auto-opens the browser for OAuth if needed.
         When remote, raises AuthenticationError for the LLM to handle.
+
+        Args:
+            query: GraphQL query or mutation string.
+            variables: Optional GraphQL variables.
+            endpoint: Override the default GraphQL endpoint URL.
 
         Raises:
             MeetupGraphQLError: If the response contains ``errors``.
@@ -87,8 +94,9 @@ class MeetupGraphQLClient:
         if variables:
             payload["variables"] = variables
 
+        url = endpoint or self._settings.meetup_graphql_endpoint
         resp = await self._http.post(
-            self._settings.meetup_graphql_endpoint,
+            url,
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -106,9 +114,18 @@ class MeetupGraphQLClient:
     async def upload_binary(self, upload_url: str, file_path: Path, content_type: str) -> None:
         """PUT image binary to a Meetup-provided upload URL."""
         file_bytes = await anyio.Path(file_path).read_bytes()
+        logger.info(
+            "Uploading %d bytes to %s (Content-Type: %s)",
+            len(file_bytes),
+            upload_url,
+            content_type,
+        )
         resp = await self._http.put(
             upload_url,
             content=file_bytes,
             headers={"Content-Type": content_type},
+        )
+        logger.info(
+            "Upload response: %s %s", resp.status_code, resp.text[:500] if resp.text else "(empty)"
         )
         resp.raise_for_status()
