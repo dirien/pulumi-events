@@ -97,9 +97,15 @@ class MeetupProvider:
             variables = variables_fn(cursor)
 
             data = await self._client.execute(query, variables)
-            connection: dict[str, Any] = data
+            connection: Any = data
             for key in response_path:
-                connection = connection[key]
+                connection = connection.get(key) if isinstance(connection, dict) else None
+                if connection is None:
+                    # Common case: groupByUrlname returns null for unknown groups
+                    if key == "groupByUrlname":
+                        urlname = variables.get("urlname", "unknown")
+                        raise ProviderError(f"Group '{urlname}' not found on Meetup")
+                    raise ProviderError(f"Unexpected null at '{key}' in API response")
 
             edges = connection.get("edges", [])
             all_edges.extend(edges)
@@ -132,7 +138,10 @@ class MeetupProvider:
 
     async def get_group(self, urlname: str) -> dict[str, Any]:
         data = await self._client.execute(queries.GROUP_BY_URLNAME, {"urlname": urlname})
-        return data["groupByUrlname"]
+        group = data.get("groupByUrlname")
+        if group is None:
+            raise ProviderError(f"Group '{urlname}' not found on Meetup")
+        return group
 
     async def search_groups(self, **kwargs: Any) -> dict[str, Any]:
         data = await self._client.execute(queries.SEARCH_GROUPS, kwargs)
@@ -289,7 +298,10 @@ class MeetupProvider:
     async def list_group_events(self, urlname: str, **kwargs: Any) -> dict[str, Any]:
         variables: dict[str, Any] = {"urlname": urlname, **kwargs}
         data = await self._client.execute(queries.GROUP_EVENTS, variables)
-        return data["groupByUrlname"]["events"]
+        group = data.get("groupByUrlname")
+        if group is None:
+            raise ProviderError(f"Group '{urlname}' not found on Meetup")
+        return group["events"]
 
     async def list_all_group_events(
         self,
