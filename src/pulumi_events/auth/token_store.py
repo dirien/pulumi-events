@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,7 +34,7 @@ class TokenStore:
 
         self._settings = settings
         self._lock = lock or _asyncio.Lock()
-        self._cache_file = settings.token_cache_dir / "meetup_token.json"
+        self._cache_file: Path = settings.token_cache_dir / "meetup_token.json"
         self._token_data: dict[str, object] | None = None
         self._load_from_disk()
 
@@ -117,7 +119,17 @@ class TokenStore:
                 self._token_data = None
 
     def _save_to_disk(self) -> None:
-        self._cache_file.parent.mkdir(parents=True, exist_ok=True)
-        self._cache_file.write_text(json.dumps(self._token_data, indent=2))
-        # Restrict permissions — token file contains secrets
-        Path.chmod(self._cache_file, 0o600)
+        path = self._cache_file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = json.dumps(self._token_data, indent=2)
+        fd, tmp_str = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        tmp = Path(tmp_str)
+        try:
+            os.fchmod(fd, 0o600)
+            os.write(fd, data.encode())
+            os.close(fd)
+            tmp.replace(path)
+        except:
+            os.close(fd)
+            tmp.unlink(missing_ok=True)
+            raise

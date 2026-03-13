@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -37,9 +38,10 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     """Set up shared resources (HTTP client, providers, token store)."""
     global _token_store, _settings
 
-    settings = Settings()
+    # Reuse the module-level Settings instance (already created for auth setup).
+    settings = _settings
+    assert settings is not None  # populated before lifespan runs  # noqa: S101
     settings.token_cache_dir.mkdir(parents=True, exist_ok=True)
-    _settings = settings
 
     token_store = TokenStore(settings)
     _token_store = token_store
@@ -72,19 +74,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         }
 
 
-_boot_settings = Settings()
+_settings = Settings()
 _auth: StaticTokenVerifier | GoogleProvider | None = None
 if (
-    _boot_settings.google_client_id.get_secret_value()
-    and _boot_settings.google_client_secret.get_secret_value()
+    _settings.google_client_id.get_secret_value()
+    and _settings.google_client_secret.get_secret_value()
 ):
-    _host = (
-        "localhost" if _boot_settings.server_host == "127.0.0.1" else _boot_settings.server_host
-    )
-    _base_url = f"http://{_host}:{_boot_settings.server_port}"
+    _host = "localhost" if _settings.server_host == "127.0.0.1" else _settings.server_host
+    _base_url = f"http://{_host}:{_settings.server_port}"
     _auth = GoogleProvider(
-        client_id=_boot_settings.google_client_id.get_secret_value(),
-        client_secret=_boot_settings.google_client_secret.get_secret_value(),
+        client_id=_settings.google_client_id.get_secret_value(),
+        client_secret=_settings.google_client_secret.get_secret_value(),
         base_url=_base_url,
         required_scopes=[
             "openid",
@@ -93,10 +93,10 @@ if (
         ],
         require_authorization_consent=False,
     )
-elif _boot_settings.auth_token.get_secret_value():
+elif _settings.auth_token.get_secret_value():
     _auth = StaticTokenVerifier(
         tokens={
-            _boot_settings.auth_token.get_secret_value(): {
+            _settings.auth_token.get_secret_value(): {
                 "client_id": "pulumi-events-client",
                 "scopes": ["full"],
             },
@@ -165,19 +165,22 @@ async def meetup_callback(request: Request) -> Response:
     error = request.query_params.get("error")
 
     if error:
-        return HTMLResponse(f"<h1>OAuth Error</h1><p>{error}</p>", status_code=400)
+        safe_error = html.escape(error)
+        return HTMLResponse(f"<h1>OAuth Error</h1><p>{safe_error}</p>", status_code=400)
     if not code:
         return HTMLResponse("<h1>Missing code parameter</h1>", status_code=400)
 
     try:
-        assert _settings is not None  # noqa: S101
+        if _token_store is None or _settings is None:
+            return HTMLResponse(
+                "<h1>Server not ready</h1><p>Please try again.</p>", status_code=503
+            )
         token_data = await exchange_code(
             code,
             _settings.meetup_client_id.get_secret_value(),
             _settings.meetup_client_secret.get_secret_value(),
             _settings,
         )
-        assert _token_store is not None  # noqa: S101
         _token_store.store_token(token_data)
         return HTMLResponse(
             "<html><body>"

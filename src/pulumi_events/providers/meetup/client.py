@@ -31,6 +31,9 @@ _AUTH_TIMEOUT = 120.0
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0  # seconds; actual delays are 1s, 2s, 4s
 
+# 401 Unauthorized: refresh the token once, then give up immediately.
+_MAX_TOKEN_REFRESHES = 1
+
 
 class MeetupGraphQLClient:
     """Low-level async GraphQL transport for Meetup."""
@@ -109,6 +112,7 @@ class MeetupGraphQLClient:
         url = endpoint or self._settings.meetup_graphql_endpoint
         last_exc: httpx.HTTPStatusError | None = None
         resp: httpx.Response | None = None
+        token_refreshed = False
 
         for attempt in range(_MAX_RETRIES):
             resp = await self._http.post(
@@ -116,6 +120,16 @@ class MeetupGraphQLClient:
                 json=payload,
                 headers={"Authorization": f"Bearer {token}"},
             )
+
+            if resp.status_code == 401:
+                if not token_refreshed:
+                    logger.warning(
+                        "Meetup API returned 401 Unauthorized — refreshing token and retrying"
+                    )
+                    token = await self._ensure_authenticated()
+                    token_refreshed = True
+                    continue
+                resp.raise_for_status()
 
             if resp.status_code == 429 or resp.status_code >= 500:
                 last_exc = None
