@@ -27,26 +27,17 @@ async def meetup_list_group_members(
     ctx: Context,
     status: str | None = None,
     limit: int | None = None,
-    all_pages: bool = True,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """List members of a Meetup group with their roles and join dates.
-
-    Auto-paginates through all results by default.
 
     Args:
         group_urlname: URL name of the group (e.g. berlin-pulumi-user-group).
         status: Filter by membership status (ACTIVE, BLOCKED, PENDING).
         limit: Maximum total number of members to return.
-        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info(f"Fetching members of '{group_urlname}'...")
-    if all_pages:
-        return await provider.list_all_group_members(group_urlname, status=status, limit=limit)
-    variables: dict[str, Any] = {"first": 200}
-    if status is not None:
-        variables["status"] = [status]
-    return await provider.list_group_members(group_urlname, **variables)
+    return await provider.list_all_group_members(group_urlname, status=status, limit=limit)
 
 
 @mcp.tool(

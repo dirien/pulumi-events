@@ -67,21 +67,17 @@ def _sanitize_geo_address(geo: dict[str, Any]) -> dict[str, Any]:
 async def luma_list_events(
     ctx: Context,
     limit: int | None = None,
-    all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """List events from your Luma calendar.
 
-    Auto-paginates through all results by default.
+    Returns compact summaries with auto-pagination.
 
     Args:
         limit: Maximum total number of events to return.
-        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching Luma events...")
-    if all_pages:
-        return await provider.list_all_events(limit=limit)
-    return await provider.list_events(limit=limit)
+    return await provider.list_all_events(limit=limit)
 
 
 @mcp.tool(
@@ -309,22 +305,17 @@ async def luma_cancel_event(
 async def luma_list_people(
     ctx: Context,
     limit: int | None = None,
-    all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """List all people from your Luma calendar.
 
     Returns contacts with their name, email, event attendance count, and tags.
-    Auto-paginates through all results by default.
 
     Args:
         limit: Maximum total number of people to return.
-        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching Luma people...")
-    if all_pages:
-        return await provider.list_all_people(limit=limit)
-    return await provider.list_people(limit=limit)
+    return await provider.list_all_people(limit=limit)
 
 
 @mcp.tool(
@@ -337,19 +328,13 @@ async def luma_list_guests(
     event_id: str,
     ctx: Context,
     limit: int | None = None,
-    all_pages: bool = True,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """List guests for a Luma event.
 
-    Auto-paginates through all results by default.
-
     Args:
         event_id: The Luma event API ID (evt-...).
         limit: Maximum total number of guests to return.
-        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info(f"Fetching guests for Luma event {event_id}...")
-    if all_pages:
-        return await provider.list_all_guests(event_id, limit=limit)
-    return await provider.list_guests(event_id, limit=limit)
+    return await provider.list_all_guests(event_id, limit=limit)

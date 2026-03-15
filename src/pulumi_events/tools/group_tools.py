@@ -57,18 +57,12 @@ async def meetup_search_groups(
 async def meetup_list_my_groups(
     ctx: Context,
     limit: int | None = None,
-    all_pages: bool = True,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """List all Meetup groups the authenticated user belongs to.
 
-    Auto-paginates through all results by default.
-
     Args:
         limit: Maximum total number of groups to return.
-        all_pages: Fetch all pages automatically (default True).
     """
     await ctx.info("Fetching your Meetup groups...")
-    if all_pages:
-        return await provider.list_all_my_groups(limit=limit)
-    return await provider.list_my_groups(first=50)
+    return await provider.list_all_my_groups(limit=limit)

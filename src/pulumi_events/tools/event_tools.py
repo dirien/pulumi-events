@@ -101,7 +101,6 @@ async def meetup_list_group_events(
     ctx: Context,
     status: str | None = None,
     limit: int | None = None,
-    all_pages: bool = True,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """List events for a Meetup group, including drafts.
@@ -114,17 +113,11 @@ async def meetup_list_group_events(
         status: Filter by event status. One of: DRAFT, ACTIVE, PAST,
             CANCELLED, PENDING. Defaults to all statuses.
         limit: Maximum total number of events to return.
-        all_pages: Fetch all pages automatically (default True).
     """
     status_label = status or "all"
     status_list = [status] if status is not None else None
     await ctx.info(f"Fetching {status_label} events for {group_urlname}...")
-    if all_pages:
-        return await provider.list_all_group_events(group_urlname, status=status_list, limit=limit)
-    variables: dict[str, Any] = {"first": 50}
-    if status_list is not None:
-        variables["status"] = status_list
-    return await provider.list_group_events(group_urlname, **variables)
+    return await provider.list_all_group_events(group_urlname, status=status_list, limit=limit)
 
 
 @mcp.tool(
