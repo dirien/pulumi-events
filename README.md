@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="PulumiEvent" width="400">
+</p>
+
 # pulumi-events
 
 MCP server for managing events on Meetup.com and Luma via AI assistants like Claude.
