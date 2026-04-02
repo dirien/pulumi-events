@@ -17,6 +17,8 @@ from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, Re
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
+from pulumi_events.auth.backends import EnvTokenBackend, FileTokenBackend
+from pulumi_events.auth.jwt_auth import authenticate_jwt
 from pulumi_events.auth.oauth import exchange_code
 from pulumi_events.auth.token_store import TokenStore
 from pulumi_events.providers.luma.client import LumaClient
@@ -43,10 +45,28 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     assert settings is not None  # populated before lifespan runs  # noqa: S101
     settings.token_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    token_store = TokenStore(settings)
+    if settings.meetup_token_backend == "env":  # noqa: S105
+        backend = EnvTokenBackend(settings.meetup_token_json)
+    else:
+        backend = FileTokenBackend(settings.token_cache_dir / "meetup_token.json")
+
+    token_store = TokenStore(settings, backend=backend)
     _token_store = token_store
 
     async with httpx.AsyncClient(timeout=30.0) as http:
+        # Auto-authenticate via JWT if configured (headless, no browser needed)
+        if (
+            settings.meetup_jwt_signing_key.get_secret_value()
+            and settings.meetup_jwt_key_id
+            and settings.meetup_member_id
+            and not token_store.is_authenticated
+        ):
+            try:
+                token_data = await authenticate_jwt(settings, http)
+                token_store.store_token(token_data)
+                logger.info("Meetup auto-authenticated via JWT")
+            except Exception:
+                logger.exception("Meetup JWT auto-auth failed; meetup_login still available")
         meetup_client = MeetupGraphQLClient(http, token_store, settings)
         meetup_provider = MeetupProvider(meetup_client)
 
@@ -80,8 +100,11 @@ if (
     _settings.google_client_id.get_secret_value()
     and _settings.google_client_secret.get_secret_value()
 ):
-    _host = "localhost" if _settings.server_host == "127.0.0.1" else _settings.server_host
-    _base_url = f"http://{_host}:{_settings.server_port}"
+    if _settings.base_url:
+        _base_url = _settings.base_url
+    else:
+        _host = "localhost" if _settings.server_host == "127.0.0.1" else _settings.server_host
+        _base_url = f"http://{_host}:{_settings.server_port}"
     _auth = GoogleProvider(
         client_id=_settings.google_client_id.get_secret_value(),
         client_secret=_settings.google_client_secret.get_secret_value(),

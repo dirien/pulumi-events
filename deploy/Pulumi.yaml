@@ -1,0 +1,6 @@
+name: pulumi-events-infra
+runtime:
+  name: python
+  options:
+    toolchain: uv
+description: Deploy pulumi-events MCP server to AWS ECS Fargate

@@ -1,0 +1,14 @@
+.venv/
+.git/
+.github/
+__pycache__/
+*.pyc
+.claude/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+tests/
+deploy/
+docs/
+.mcp.json
+Makefile

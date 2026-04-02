@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import tempfile
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
 
+from pulumi_events.auth.backends import FileTokenBackend, TokenBackend
 from pulumi_events.exceptions import AuthenticationError
 
 if TYPE_CHECKING:
@@ -27,16 +24,24 @@ _REFRESH_MARGIN_SECONDS = 300  # refresh 5 min before expiry
 
 
 class TokenStore:
-    """Thread-safe, file-backed OAuth2 token store with auto-refresh."""
+    """Thread-safe OAuth2 token store with pluggable backend and auto-refresh."""
 
-    def __init__(self, settings: Settings, *, lock: asyncio.Lock | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        backend: TokenBackend | None = None,
+        lock: asyncio.Lock | None = None,
+    ) -> None:
         import asyncio as _asyncio
 
         self._settings = settings
         self._lock = lock or _asyncio.Lock()
-        self._cache_file: Path = settings.token_cache_dir / "meetup_token.json"
+        self._backend = backend or FileTokenBackend(
+            settings.token_cache_dir / "meetup_token.json"
+        )
         self._token_data: dict[str, object] | None = None
-        self._load_from_disk()
+        self._token_data = self._backend.load()
 
     # ------------------------------------------------------------------
     # Public API
@@ -71,8 +76,8 @@ class TokenStore:
         """Persist a new token response (from initial auth or refresh)."""
         token_data["obtained_at"] = time.time()
         self._token_data = token_data
-        self._save_to_disk()
-        logger.info("Meetup token cached to %s", self._cache_file)
+        self._backend.save(token_data)
+        logger.info("Meetup token stored via %s", type(self._backend).__name__)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -86,6 +91,15 @@ class TokenStore:
         return time.time() > obtained + expires_in - _REFRESH_MARGIN_SECONDS
 
     async def _refresh(self, http: httpx.AsyncClient) -> None:
+        # Prefer JWT re-authentication if configured (fully headless)
+        if self._settings.meetup_jwt_signing_key.get_secret_value():
+            from pulumi_events.auth.jwt_auth import authenticate_jwt
+
+            token_data = await authenticate_jwt(self._settings, http)
+            self.store_token(token_data)
+            logger.info("Meetup token refreshed via JWT")
+            return
+
         refresh_token = (self._token_data or {}).get("refresh_token")
         if not isinstance(refresh_token, str):
             msg = "No refresh token available — re-authenticate with meetup_login"
@@ -110,26 +124,3 @@ class TokenStore:
         self.store_token(resp.json())
         logger.info("Meetup token refreshed successfully")
 
-    def _load_from_disk(self) -> None:
-        if self._cache_file.exists():
-            try:
-                self._token_data = json.loads(self._cache_file.read_text())
-            except (json.JSONDecodeError, OSError):
-                logger.warning("Could not read token cache at %s", self._cache_file)
-                self._token_data = None
-
-    def _save_to_disk(self) -> None:
-        path = self._cache_file
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = json.dumps(self._token_data, indent=2)
-        fd, tmp_str = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-        tmp = Path(tmp_str)
-        try:
-            os.fchmod(fd, 0o600)
-            os.write(fd, data.encode())
-            os.close(fd)
-            tmp.replace(path)
-        except:
-            os.close(fd)
-            tmp.unlink(missing_ok=True)
-            raise

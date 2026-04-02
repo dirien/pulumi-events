@@ -1,0 +1,3 @@
+environment:
+  - marketing/aws-auth
+  - marketing/pulumi-events

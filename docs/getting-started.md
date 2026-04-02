@@ -25,31 +25,18 @@ The server reads credentials from environment variables. The recommended approac
 
 ### Option A: Pulumi ESC (recommended)
 
-Make sure your Pulumi ESC environment (e.g. `pulumi-idp/auth`) exports:
+Make sure your Pulumi ESC environment (e.g. `ediri/pulumi-idp/auth`) exports:
 
 ```yaml
 environmentVariables:
   PULUMI_EVENTS_MEETUP_CLIENT_ID: ${meetup.key}
-  PULUMI_EVENTS_MEETUP_CLIENT_SECRET: ${meetup.secret}
   PULUMI_EVENTS_LUMA_API_KEY: ${lumaApIKey}
-```
-
-You can add these with the Pulumi CLI:
-
-```bash
-pulumi env set pulumi-idp/auth \
-  'environmentVariables.PULUMI_EVENTS_MEETUP_CLIENT_ID' '${meetup.key}'
-pulumi env set pulumi-idp/auth \
-  'environmentVariables.PULUMI_EVENTS_MEETUP_CLIENT_SECRET' '${meetup.secret}'
-pulumi env set pulumi-idp/auth \
-  'environmentVariables.PULUMI_EVENTS_LUMA_API_KEY' '${lumaApIKey}'
 ```
 
 ### Option B: Plain environment variables
 
 ```bash
 export PULUMI_EVENTS_MEETUP_CLIENT_ID="your-meetup-client-id"
-export PULUMI_EVENTS_MEETUP_CLIENT_SECRET="your-meetup-client-secret"
 export PULUMI_EVENTS_LUMA_API_KEY="your-luma-api-key"
 ```
 
@@ -60,7 +47,7 @@ cd pulumi-events
 uv sync
 
 # With Pulumi ESC:
-pulumi env run pulumi-idp/auth -- uv run pulumi-events
+pulumi env run ediri/pulumi-idp/auth -- uv run pulumi-events
 
 # Or with plain env vars:
 uv run pulumi-events
@@ -73,7 +60,26 @@ The server starts on `http://127.0.0.1:8080` in stateless HTTP mode with:
 
 Stateless mode means each request creates a fresh transport — no stale session 404 errors after server restarts.
 
-## 4. Connect Claude Code
+## 4. Connect to the cloud deployment
+
+The server is already deployed to AWS and available at `https://d3hhsm0lhey01y.cloudfront.net`. This is the easiest way to get started -- no local setup required.
+
+Add to your Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "pulumi-events": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://d3hhsm0lhey01y.cloudfront.net/mcp"]
+    }
+  }
+}
+```
+
+On first connect, you'll authenticate with your `@pulumi.com` Google account. Meetup and Luma are pre-authenticated on the server -- no extra login steps.
+
+## 5. Connect Claude Code (local)
 
 Add to `~/.claude/settings.json` (or project-level `.claude/settings.json`):
 
@@ -88,7 +94,7 @@ Add to `~/.claude/settings.json` (or project-level `.claude/settings.json`):
 }
 ```
 
-## 5. Secure the MCP Endpoint (Optional)
+## 6. Secure the MCP endpoint (optional, local only)
 
 To require bearer token authentication on all MCP requests, set `PULUMI_EVENTS_AUTH_TOKEN`. When unset, the server runs without auth (default for local development).
 
@@ -103,7 +109,7 @@ openssl rand -hex 32
 **Pulumi ESC:**
 
 ```bash
-pulumi env set pulumi-idp/auth \
+pulumi env set ediri/pulumi-idp/auth \
   'environmentVariables.PULUMI_EVENTS_AUTH_TOKEN' 'your-generated-token'
 ```
 
@@ -133,7 +139,7 @@ Add the `headers` field with the token to your MCP server config:
 
 Requests without a valid `Authorization: Bearer <token>` header will receive a 401 response. Health (`/health`) and OAuth callback (`/auth/meetup/callback`) routes are not affected.
 
-## 6. Authenticate with Meetup
+## 7. Authenticate with Meetup (local only)
 
 Once connected, ask Claude to log in:
 
@@ -145,7 +151,7 @@ The server automatically opens your browser to the OAuth authorization page (dis
 
 Luma requires no login step — the API key is configured at startup.
 
-## 7. Start Using
+## 8. Start using
 
 After authentication, you can:
 
@@ -218,8 +224,7 @@ All 22 tools include metadata for better LLM integration:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PULUMI_EVENTS_MEETUP_CLIENT_ID` | — | Meetup OAuth2 client ID |
-| `PULUMI_EVENTS_MEETUP_CLIENT_SECRET` | — | Meetup OAuth2 client secret |
+| `PULUMI_EVENTS_MEETUP_CLIENT_ID` | — | Meetup OAuth client ID |
 | `PULUMI_EVENTS_LUMA_API_KEY` | — | Luma API key |
 | `PULUMI_EVENTS_SERVER_HOST` | `127.0.0.1` | Server bind address |
 | `PULUMI_EVENTS_SERVER_PORT` | `8080` | Server port |

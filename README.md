@@ -10,7 +10,7 @@ Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
 - **Cover image upload** — pass a local file path when creating/updating events; the server handles CDN upload automatically (Luma presigned URL, Meetup two-step photo upload)
 - Auto-pagination on all list tools — single tool call returns all results
-- Meetup: OAuth2 authentication with automatic token caching, refresh, and browser auto-open
+- Meetup: JWT authentication for headless server-to-server access (no browser needed), with OAuth2 fallback
 - Meetup Pro network search with member metadata (roles, events attended, group counts)
 - Luma: API key authentication
 - Stateless HTTP transport — no stale session issues on server restarts
@@ -35,34 +35,40 @@ All tools include FastMCP metadata for better LLM integration:
 - **Output schemas** — key tools declare their response structure so LLM clients know what fields to expect
 - **Annotations** — read-only tools are marked with `readOnlyHint`, idempotent tools with `idempotentHint`
 
-## Quick Start
+## Quick start
 
 See the [Getting Started guide](docs/getting-started.md) for full setup instructions.
 
-```bash
-# Prerequisites: Python 3.12+, uv, Pulumi CLI (logged in)
+### Cloud (deployed)
 
-# Clone and install
-git clone https://github.com/dirien/pulumi-events.git
-cd pulumi-events
-uv sync
-
-# Start the server (credentials injected via Pulumi ESC)
-pulumi env run pulumi-idp/auth -- uv run pulumi-events
-```
-
-Then add to your Claude Code MCP config:
+The server runs on AWS ECS Fargate behind CloudFront. Connect Claude Desktop or Claude Code directly:
 
 ```json
 {
   "mcpServers": {
     "pulumi-events": {
-      "type": "streamable-http",
-      "url": "http://127.0.0.1:8080/mcp"
+      "command": "npx",
+      "args": ["mcp-remote", "https://d3hhsm0lhey01y.cloudfront.net/mcp"]
     }
   }
 }
 ```
+
+Google OAuth handles MCP auth. Meetup authenticates automatically via JWT on server startup.
+
+### Local development
+
+```bash
+# Prerequisites: Python 3.12+, uv, Pulumi CLI (logged in)
+git clone https://github.com/dirien/pulumi-events.git
+cd pulumi-events
+uv sync
+
+# Start the server (credentials injected via Pulumi ESC)
+pulumi env run ediri/pulumi-idp/auth -- uv run pulumi-events
+```
+
+Then point Claude Code at `http://127.0.0.1:8080/mcp`.
 
 ## Tools
 
@@ -135,16 +141,21 @@ All settings are loaded from environment variables with the `PULUMI_EVENTS_` pre
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PULUMI_EVENTS_MEETUP_CLIENT_ID` | — | Meetup OAuth2 client ID |
-| `PULUMI_EVENTS_MEETUP_CLIENT_SECRET` | — | Meetup OAuth2 client secret |
+| `PULUMI_EVENTS_MEETUP_CLIENT_ID` | — | Meetup OAuth client ID |
 | `PULUMI_EVENTS_LUMA_API_KEY` | — | Luma API key (requires Luma Plus) |
 | `PULUMI_EVENTS_SERVER_HOST` | `127.0.0.1` | Server bind address |
 | `PULUMI_EVENTS_SERVER_PORT` | `8080` | Server port |
-| `PULUMI_EVENTS_MEETUP_REDIRECT_URI` | `http://127-0-0-1.nip.io:8080/auth/meetup/callback` | OAuth2 redirect URI |
 | `PULUMI_EVENTS_TOKEN_CACHE_DIR` | `~/.config/pulumi-events` | Token cache directory |
-| `PULUMI_EVENTS_AUTH_TOKEN` | — | Bearer token for MCP endpoint auth (optional, disabled if unset) |
-| `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `true` | Auto-open browser for OAuth login |
+| `PULUMI_EVENTS_AUTH_TOKEN` | — | Bearer token for MCP endpoint auth (optional) |
+| `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `false` | Auto-open browser for OAuth login |
 | `PULUMI_EVENTS_MEETUP_PRO_NETWORK_URLNAME` | `pugs` | Default Meetup Pro network URL name |
+| `PULUMI_EVENTS_BASE_URL` | — | Public URL override (e.g. CloudFront domain) |
+| `PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY` | — | RSA private key PEM for Meetup JWT auth |
+| `PULUMI_EVENTS_MEETUP_JWT_KEY_ID` | — | Meetup signing key ID (kid) |
+| `PULUMI_EVENTS_MEETUP_MEMBER_ID` | — | Meetup member ID for JWT auth (sub claim) |
+| `PULUMI_EVENTS_MEETUP_TOKEN_BACKEND` | `file` | Token backend: `file` or `env` |
+| `PULUMI_EVENTS_GOOGLE_CLIENT_ID` | — | Google OAuth client ID (for MCP auth) |
+| `PULUMI_EVENTS_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
 
 ## Authentication
 
@@ -183,6 +194,8 @@ src/pulumi_events/
 ├── exceptions.py          # Exception hierarchy
 ├── utils.py               # Shared utilities (image MIME type detection)
 ├── auth/
+│   ├── backends.py        # Pluggable token backends (File, Env)
+│   ├── jwt_auth.py        # Meetup JWT auth (headless, server-to-server)
 │   ├── oauth.py           # OAuth2 flow helpers (Meetup)
 │   └── token_store.py     # Token persistence + auto-refresh
 ├── providers/
@@ -208,6 +221,29 @@ src/pulumi_events/
 └── resources/
     ├── meetup_resources.py
     └── luma_resources.py
+```
+
+## Deployment
+
+The server is deployed to AWS ECS Fargate via Pulumi. Infrastructure code lives in `deploy/`.
+
+```
+deploy/
+├── __main__.py       # Pulumi program (VPC, ECR, ECS, ALB, CloudFront, Secrets Manager)
+├── Pulumi.yaml       # Project config (org: pulumi, toolchain: uv)
+├── Pulumi.dev.yaml   # Stack config (ESC environments: marketing/aws-auth, marketing/pulumi-events)
+├── pyproject.toml    # Pulumi SDK dependencies
+└── uv.lock
+```
+
+Architecture: CloudFront (HTTPS) → ALB (HTTP) → ECS Fargate (port 8080)
+
+Meetup authenticates headlessly via JWT on every container startup. Secrets are stored in AWS Secrets Manager and injected via ECS task definition. All config comes from Pulumi ESC.
+
+```bash
+cd deploy
+pulumi up    # deploy or update
+pulumi logs  # tail container logs
 ```
 
 ## Development

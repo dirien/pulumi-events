@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     auto_open_browser: bool = False
     meetup_pro_network_urlname: str = "pugs"
 
+    # -- Deployment settings --
+    base_url: str = ""  # e.g. "https://d1234abcd.cloudfront.net"
+    meetup_token_backend: str = "file"  # "file" | "env"
+    meetup_token_json: SecretStr = SecretStr("")  # token JSON for "env" backend
+
+    # -- Meetup JWT auth (headless, server-to-server) --
+    meetup_jwt_signing_key: SecretStr = SecretStr("")  # RSA private key PEM
+    meetup_jwt_key_id: str = ""  # signing key ID (kid)
+    meetup_member_id: str = ""  # Meetup member ID (sub claim)
+
     @field_validator(
         "meetup_graphql_endpoint",
         "meetup_graphql_endpoint_v2",
