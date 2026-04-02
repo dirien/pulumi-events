@@ -10,35 +10,46 @@ This guide walks you through setting up and running the pulumi-events MCP server
 - **Meetup OAuth2 app** — registered at [meetup.com/api/oauth/list](https://www.meetup.com/api/oauth/list/)
 - **Luma API key** — requires a [Luma Plus](https://lu.ma) subscription
 
-## 1. Meetup OAuth2 App Setup
+## 1. Meetup OAuth app setup
 
 1. Go to [Meetup OAuth Consumers](https://www.meetup.com/api/oauth/list/) and create a new consumer
-2. Set the **redirect URI** to:
+2. Set the **redirect URI** to your CloudFront domain (get it from `pulumi stack output cloudfront_url` after deploying):
    ```
-   http://127-0-0-1.nip.io:8080/auth/meetup/callback
+   https://<your-cloudfront-domain>/auth/meetup/callback
    ```
-3. Note your **Client ID** (key) and **Client Secret**
+   For local development, use `http://127-0-0-1.nip.io:8080/auth/meetup/callback` instead.
+3. Note your **Client ID** (key)
+4. Go to the **Signing Keys** section and click **Create First Signing Key**. Download the RSA private key -- you'll need it for JWT authentication.
+5. Note the **Key ID** (kid) shown next to the signing key.
 
-## 2. Configure Credentials
+## 2. Configure credentials
 
-The server reads credentials from environment variables. The recommended approach uses Pulumi ESC to manage secrets.
+The server authenticates with Meetup using the **JWT flow** (server-to-server, no browser needed). You need three things from step 1: the client ID, the RSA signing key, and the key ID. You also need your Meetup member ID (visible in your Meetup profile URL).
 
-### Option A: Pulumi ESC (recommended)
+### Pulumi ESC (recommended)
 
-Make sure your Pulumi ESC environment (e.g. `ediri/pulumi-idp/auth`) exports:
+All secrets are stored in the `pulumi/marketing/pulumi-events` ESC environment. The key values:
 
-```yaml
-environmentVariables:
-  PULUMI_EVENTS_MEETUP_CLIENT_ID: ${meetup.key}
-  PULUMI_EVENTS_LUMA_API_KEY: ${lumaApIKey}
-```
+| ESC key | What it is |
+|---|---|
+| `meetupClientId` | Your Meetup OAuth client key |
+| `meetupJwtSigningKey` | The RSA private key PEM |
+| `meetupJwtKeyId` | The signing key ID (kid) |
+| `meetupMemberId` | Your Meetup member ID |
+| `lumaApiKey` | Luma API key |
+| `googleClientId` / `googleClientSecret` | Google OAuth for MCP client auth |
 
-### Option B: Plain environment variables
+### Plain environment variables (local dev)
 
 ```bash
 export PULUMI_EVENTS_MEETUP_CLIENT_ID="your-meetup-client-id"
+export PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY="$(cat /path/to/private-key.pem)"
+export PULUMI_EVENTS_MEETUP_JWT_KEY_ID="your-key-id"
+export PULUMI_EVENTS_MEETUP_MEMBER_ID="your-member-id"
 export PULUMI_EVENTS_LUMA_API_KEY="your-luma-api-key"
 ```
+
+When the JWT settings are configured, the server authenticates with Meetup automatically on startup. No need to run `meetup_login` or open a browser.
 
 ## 3. Install and Run
 
@@ -225,15 +236,19 @@ All 22 tools include metadata for better LLM integration:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PULUMI_EVENTS_MEETUP_CLIENT_ID` | — | Meetup OAuth client ID |
+| `PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY` | — | RSA private key PEM for JWT auth |
+| `PULUMI_EVENTS_MEETUP_JWT_KEY_ID` | — | Meetup signing key ID (kid) |
+| `PULUMI_EVENTS_MEETUP_MEMBER_ID` | — | Meetup member ID for JWT auth |
 | `PULUMI_EVENTS_LUMA_API_KEY` | — | Luma API key |
 | `PULUMI_EVENTS_SERVER_HOST` | `127.0.0.1` | Server bind address |
 | `PULUMI_EVENTS_SERVER_PORT` | `8080` | Server port |
-| `PULUMI_EVENTS_MEETUP_REDIRECT_URI` | `http://127-0-0-1.nip.io:8080/auth/meetup/callback` | OAuth2 redirect URI |
+| `PULUMI_EVENTS_BASE_URL` | — | Public URL override (CloudFront domain) |
 | `PULUMI_EVENTS_TOKEN_CACHE_DIR` | `~/.config/pulumi-events` | Token cache location |
-| `PULUMI_EVENTS_LUMA_API_ENDPOINT` | `https://public-api.luma.com/v1` | Luma API base URL |
-| `PULUMI_EVENTS_AUTH_TOKEN` | — | Bearer token for MCP endpoint auth (optional, disabled if unset) |
-| `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `true` | Auto-open browser for OAuth login |
+| `PULUMI_EVENTS_AUTH_TOKEN` | — | Bearer token for MCP endpoint auth (optional) |
+| `PULUMI_EVENTS_MEETUP_TOKEN_BACKEND` | `file` | Token backend: `file` or `env` |
 | `PULUMI_EVENTS_MEETUP_PRO_NETWORK_URLNAME` | `pugs` | Default Meetup Pro network URL name |
+| `PULUMI_EVENTS_GOOGLE_CLIENT_ID` | — | Google OAuth client ID (MCP auth) |
+| `PULUMI_EVENTS_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
 
 ## Troubleshooting
 
@@ -242,17 +257,13 @@ All 22 tools include metadata for better LLM integration:
 - Check dependencies: `uv sync`
 - Check credentials are set: `env | grep PULUMI_EVENTS`
 
-### OAuth callback fails (Meetup)
-- Verify the redirect URI in your Meetup OAuth app matches exactly:
-  `http://127-0-0-1.nip.io:8080/auth/meetup/callback`
-- Make sure the server is running when you click authorize
-- Check server logs for detailed error messages
-
-### 404 on /mcp after server restart
-The server runs in stateless HTTP mode, so this should not happen. If you see 404 errors, restart your MCP client (Claude Code or Claude Desktop) to clear any cached session state.
+### Meetup JWT auth fails on startup
+- Check that `PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY`, `PULUMI_EVENTS_MEETUP_JWT_KEY_ID`, and `PULUMI_EVENTS_MEETUP_MEMBER_ID` are all set
+- Verify the signing key hasn't been rotated on Meetup's side
+- Check CloudWatch logs for the specific error
 
 ### Meetup token expired
-The server refreshes tokens automatically. If refresh fails, run `meetup_login` again.
+With JWT auth configured, the server re-authenticates automatically via JWT when the token expires. No manual intervention needed.
 
 ### Luma API errors
 - Verify your API key is valid and your Luma Plus subscription is active
