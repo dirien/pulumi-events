@@ -52,13 +52,13 @@ The server runs on AWS ECS Fargate behind CloudFront. Connect Claude Desktop or 
   "mcpServers": {
     "pulumi-events": {
       "command": "npx",
-      "args": ["mcp-remote", "https://d3hhsm0lhey01y.cloudfront.net/mcp"]
+      "args": ["mcp-remote", "https://<your-cloudfront-domain>/mcp"]
     }
   }
 }
 ```
 
-Google OAuth handles MCP auth. Meetup authenticates automatically via JWT on server startup.
+Google OAuth handles MCP auth. Meetup authenticates automatically via JWT on server startup. The CloudFront domain is output by `pulumi stack output cloudfront_url` after deployment.
 
 ### Local development
 

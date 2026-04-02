@@ -62,7 +62,7 @@ Stateless mode means each request creates a fresh transport — no stale session
 
 ## 4. Connect to the cloud deployment
 
-The server is already deployed to AWS and available at `https://d3hhsm0lhey01y.cloudfront.net`. This is the easiest way to get started -- no local setup required.
+The server is already deployed to AWS and available at `https://<your-cloudfront-domain>`. This is the easiest way to get started -- no local setup required.
 
 Add to your Claude Desktop config (`claude_desktop_config.json`):
 
@@ -71,7 +71,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
   "mcpServers": {
     "pulumi-events": {
       "command": "npx",
-      "args": ["mcp-remote", "https://d3hhsm0lhey01y.cloudfront.net/mcp"]
+      "args": ["mcp-remote", "https://<your-cloudfront-domain>/mcp"]
     }
   }
 }
