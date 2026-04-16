@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
@@ -15,6 +18,112 @@ from pulumi_events.tools._deps import get_meetup_provider
 from pulumi_events.tools._errors import handle_provider_errors
 
 __all__: list[str] = []
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_start_datetime(value: str, *, target_timezone: str | None = None) -> str:
+    """Validate an ISO 8601 start time and normalize it for Meetup.
+
+    Meetup's ``CreateEventInput.startDateTime`` is interpreted as
+    **wall-clock time** — not UTC.  For Pro network events the
+    ``pro_network_timezone`` field tells Meetup which timezone to use;
+    for single-group events it is the host group's timezone.
+
+    When *target_timezone* is given (Pro network events) the offset-aware
+    input is converted to naive wall-clock in that timezone so the
+    fan-out anchors correctly.  Without it (single-group events) the
+    value is normalized to UTC ``Z`` form as a safe default.
+
+    Raises:
+        ToolError: if the string is not valid ISO 8601, or has no timezone
+            offset (naive datetime).
+    """
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ToolError(
+            f"start_date_time is not valid ISO 8601: {value!r}. "
+            "Expected e.g. '2026-04-15T11:00:00-05:00' or '2026-04-15T16:00:00Z'."
+        ) from exc
+    if dt.tzinfo is None:
+        raise ToolError(
+            f"start_date_time {value!r} has no timezone offset. "
+            "Naive datetimes are ambiguous and can propagate incorrectly to "
+            "Pro network sub-groups. Include an explicit offset "
+            "(e.g. '2026-04-15T11:00:00-05:00') or 'Z' for UTC."
+        )
+    if target_timezone is not None:
+        try:
+            tz = ZoneInfo(target_timezone)
+        except KeyError as exc:
+            raise ToolError(
+                f"Unknown timezone {target_timezone!r}. "
+                "Use an IANA timezone like 'US/Central' or 'Europe/Berlin'."
+            ) from exc
+        local_dt = dt.astimezone(tz)
+        result = local_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        logger.debug("Normalized %r → %r (wall-clock in %s)", value, result, target_timezone)
+        return result
+    result = dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    logger.debug("Normalized %r → %r (UTC)", value, result)
+    return result
+
+
+def _require_naive_local_datetime(value: str) -> str:
+    """Validate an edit-event start time is in naive local wall-clock form.
+
+    Meetup's ``EditEventInput.startDateTime`` rejects offset-aware ISO
+    strings with ``"Invalid event edit params"`` and requires a naive
+    local wall-clock string interpreted in the event's group timezone
+    (e.g. ``"2026-05-13T18:00"`` for an 18:00 local start in Berlin).
+
+    This is the opposite of ``CreateEventInput`` which prefers
+    offset-aware or UTC-anchored strings. Surfacing the difference here
+    gives callers a clear, actionable error instead of Meetup's generic
+    rejection.
+
+    Raises:
+        ToolError: if the string is not valid ISO 8601, or includes a
+            timezone offset.
+    """
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ToolError(
+            f"start_date_time is not valid ISO 8601: {value!r}. "
+            "For edit, use naive local wall-clock form e.g. '2026-05-13T18:00'."
+        ) from exc
+    if dt.tzinfo is not None:
+        raise ToolError(
+            f"start_date_time {value!r} has a timezone offset, but Meetup's "
+            "EditEventInput requires naive local wall-clock form interpreted "
+            "in the event's group timezone. Use e.g. '2026-05-13T18:00' "
+            "(naive Berlin time) instead of '2026-05-13T16:00:00Z' or "
+            "'2026-05-13T18:00:00+02:00'."
+        )
+    return value
+
+
+def _require_network_timezone(
+    pro_network_urlname: str | None, pro_network_timezone: str | None
+) -> None:
+    """Require an explicit ``pro_network_timezone`` for Pro network events.
+
+    Without this field, Meetup's network-event fan-out has no timezone
+    anchor and may re-interpret the start time per sub-group.
+
+    Raises:
+        ToolError: if ``pro_network_urlname`` is set but
+            ``pro_network_timezone`` is not.
+    """
+    if pro_network_urlname is not None and pro_network_timezone is None:
+        raise ToolError(
+            "pro_network_timezone is required when creating a Pro network event "
+            "(e.g. 'US/Central', 'Europe/Berlin', 'UTC'). Without it, Meetup "
+            "may re-interpret the start time per sub-group and produce "
+            "different UTC moments across the network."
+        )
 
 
 @mcp.tool(
@@ -165,11 +274,35 @@ async def meetup_create_event(
     is PUBLISHED the event goes live in every group immediately — no
     need to publish each sub-group copy individually.
 
+    Pro network events require **both** an offset-aware ``start_date_time``
+    **and** ``pro_network_timezone``. Without both, Meetup's fan-out
+    re-interprets the wall-clock time per sub-group, publishing different
+    absolute UTC moments in each group. Example call::
+
+        meetup_create_event(
+            group_urlname="pulumi-seattle",
+            title="Getting Started with Kubernetes on Google Cloud",
+            description="<p>Join us...</p>",
+            start_date_time="2026-05-13T11:00:00-05:00",  # 11 AM Central
+            duration="PT2H",
+            publish_status="PUBLISHED",
+            pro_network_urlname="pugs",
+            pro_network_timezone="US/Central",             # required anchor
+        )
+
+    Note: ``start_date_time`` on **edit** uses the opposite format — naive
+    local wall-clock (e.g. ``"2026-05-13T18:00"``) — because Meetup's
+    ``EditEventInput`` rejects offset-aware strings.
+
     Args:
         group_urlname: URL name of the group hosting the event.
         title: Event title.
         description: Event description (HTML supported).
-        start_date_time: Start time in ISO 8601 format.
+        start_date_time: Start time in ISO 8601 format **with timezone offset**
+            (e.g. '2026-04-15T11:00:00-05:00' or '2026-04-15T16:00:00Z').
+            Naive datetimes are rejected because they are ambiguous when
+            propagated across Pro network sub-groups. Normalized to UTC
+            before being sent to Meetup.
         duration: Duration in ISO 8601 period (default PT2H = 2 hours).
         event_type: PHYSICAL or ONLINE.
         venue_id: Venue ID (from meetup_create_venue).
@@ -183,17 +316,24 @@ async def meetup_create_event(
         pro_network_urlname: Pro network URL name (e.g. "pugs"). Automatically
             creates a network event filter and propagates across all active groups.
         pro_network_timezone: Timezone for Pro network events (e.g. "US/Eastern").
+            **Required** when ``pro_network_urlname`` is set — without it,
+            sub-groups may render the event at different absolute UTC moments.
         pro_network_group_ids: Specific group IDs to include in the network
             event. When omitted, all active groups in the network are included.
         pro_network_excluded_group_ids: Group IDs to exclude from the network
             event. Useful for skipping specific chapters.
         featured_image_path: Local file path to a featured image. Uploaded and set automatically.
     """
+    _require_network_timezone(pro_network_urlname, pro_network_timezone)
+    normalized_start = _normalize_start_datetime(
+        start_date_time, target_timezone=pro_network_timezone
+    )
+
     input_data: dict[str, Any] = {
         "groupUrlname": group_urlname,
         "title": title,
         "description": description,
-        "startDateTime": start_date_time,
+        "startDateTime": normalized_start,
         "duration": duration,
         "publishStatus": publish_status,
     }
@@ -283,7 +423,12 @@ async def meetup_edit_event(
         group_urlname: Group URL name (required when setting featured_image_path).
         title: New event title.
         description: New description (HTML supported).
-        start_date_time: New start time (ISO 8601).
+        start_date_time: New start time as a **naive** ISO 8601 wall-clock
+            string in the event's group timezone (e.g. '2026-05-13T18:00'
+            for an 18:00 local start in Berlin). Meetup's EditEventInput
+            rejects offset-aware strings with "Invalid event edit params" —
+            this differs from create_event which prefers offset-aware
+            ('...Z' or '...+HH:MM') form.
         duration: New duration (ISO 8601 period).
         event_type: PHYSICAL or ONLINE.
         venue_id: New venue ID.
@@ -300,7 +445,7 @@ async def meetup_edit_event(
     if description is not None:
         kwargs["description"] = description
     if start_date_time is not None:
-        kwargs["startDateTime"] = start_date_time
+        kwargs["startDateTime"] = _require_naive_local_datetime(start_date_time)
     if duration is not None:
         kwargs["duration"] = duration
     if event_type is not None:

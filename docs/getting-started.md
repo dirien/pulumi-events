@@ -57,12 +57,34 @@ When the JWT settings are configured, the server authenticates with Meetup autom
 cd pulumi-events
 uv sync
 
-# With Pulumi ESC:
-pulumi env run ediri/pulumi-idp/auth -- uv run pulumi-events
-
-# Or with plain env vars:
+# With plain env vars (recommended for local dev):
 uv run pulumi-events
 ```
+
+### Running locally with full write access
+
+The `pulumi/marketing/pulumi-events` ESC environment stores secrets as Pulumi stack config (`pulumiConfig.*` keys), not as environment variables. To run locally with JWT auth (required for event create/edit/delete), extract the secrets and set env vars:
+
+```bash
+# Extract from ESC + stack config
+export PULUMI_EVENTS_MEETUP_CLIENT_ID="$(pulumi env open pulumi/marketing/pulumi-events --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['pulumiConfig']['pulumi-events-infra:meetupClientId'])")"
+export PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY="$(pulumi env open pulumi/marketing/pulumi-events --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['pulumiConfig']['pulumi-events-infra:meetupJwtSigningKey'])")"
+export PULUMI_EVENTS_MEETUP_JWT_KEY_ID="$(cd deploy && pulumi config get meetupJwtKeyId)"
+export PULUMI_EVENTS_MEETUP_MEMBER_ID="$(cd deploy && pulumi config get meetupMemberId)"
+export PULUMI_EVENTS_LUMA_API_KEY="$(pulumi env open pulumi/marketing/pulumi-events --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['pulumiConfig']['pulumi-events-infra:lumaApiKey'])")"
+
+uv run pulumi-events
+```
+
+> **Important:** Do not set `PULUMI_EVENTS_GOOGLE_CLIENT_ID` or `PULUMI_EVENTS_GOOGLE_CLIENT_SECRET` for local development. Google OAuth blocks Claude Desktop's `mcp-remote` with 401 loops because the OAuth handshake cannot complete locally.
+
+> **Note:** `pulumi env run pulumi-idp/auth` only provides `CLIENT_ID` and `CLIENT_SECRET`, which gives read-only OAuth access. Event creation/editing will fail with "You are not authorized to perform this action". Use the JWT env vars above instead.
+
+### Token cache
+
+The server caches Meetup tokens at `~/.config/pulumi-events/meetup_token.json`. JWT authentication runs during token **refresh** (when a cached token expires), not on cold start. If you get "Not authenticated — run meetup_login first" with no cached token, either:
+- Run `meetup_login` once to bootstrap a token file, or
+- Copy an expired token file so the JWT refresh path triggers on first API call
 
 The server starts on `http://127.0.0.1:8080` in stateless HTTP mode with:
 - MCP endpoint at `/mcp`
@@ -173,8 +195,9 @@ Get details of Meetup event 12345
 List draft events in berlin-pulumi-user-group
 List all events in tel-aviv-pulumi-user-group
 Search for Pulumi events on Meetup
-Create a draft event in berlin-pulumi-user-group
+Create a draft event in berlin-pulumi-user-group on May 15 at 7pm Berlin time
 Create a draft event in berlin-pulumi-user-group with cover image /tmp/banner.png
+Create a Pro network event for pugs at 11am Central on June 10, publish to all groups, timezone US/Central
 Read meetup://group/berlin-pulumi-user-group
 List members of berlin-pulumi-user-group
 Get details of member 12345 in berlin-pulumi-user-group
@@ -211,6 +234,23 @@ Read meetup event 12345 and create a matching Luma event
 ```
 
 The LLM will read the Meetup event details and use the Google Maps place ID to set the venue on Luma. The server strips invalid address fields server-side as a safety net.
+
+### Timezone handling for Meetup events
+
+Meetup's create and edit APIs accept **opposite** datetime formats:
+
+| Operation | `start_date_time` format | Example |
+|-----------|--------------------------|---------|
+| **Create** | Offset-aware ISO 8601 | `2026-04-15T11:00:00-05:00` or `2026-04-15T16:00:00Z` |
+| **Edit** | Naive local wall-clock | `2026-05-13T18:00` |
+
+For **Pro network events** (fan-out to multiple chapters), always include both:
+- An offset-aware `start_date_time` (so all sub-groups anchor to the same UTC instant)
+- `pro_network_timezone` (e.g. `"US/Central"`) — required, the tool rejects calls without it
+
+Without these, each sub-group re-interprets the time in its own local timezone, causing drift across the network.
+
+When **editing** an event, use naive local wall-clock in the event's group timezone. Meetup's `EditEventInput` rejects offset-aware strings with `"Invalid event edit params"`.
 
 ## Architecture
 

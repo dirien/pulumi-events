@@ -42,3 +42,14 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["pulumi_events"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "S101",   # use of assert is expected in pytest
+    "ANN201", # public test functions don't need return annotations
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
