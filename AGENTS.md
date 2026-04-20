@@ -13,8 +13,38 @@ MCP server for managing events on **Meetup.com** and **Luma** via AI assistants.
 
 ```bash
 uv sync                                                  # install deps
-pulumi env run pulumi-idp/auth -- uv run pulumi-events   # run with secrets from Pulumi ESC
 ```
+
+### Running locally with JWT auth (write access)
+
+The `pulumi/marketing/pulumi-events` ESC environment stores secrets as
+`pulumiConfig` keys for the cloud deployment, **not** as `PULUMI_EVENTS_*`
+env vars. To run locally with JWT auth (needed for event create/edit), you
+must extract the signing key and set env vars explicitly:
+
+```bash
+# Extract secrets from ESC and Pulumi stack config
+export PULUMI_EVENTS_MEETUP_CLIENT_ID="$(pulumi env open pulumi/marketing/pulumi-events --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['pulumiConfig']['pulumi-events-infra:meetupClientId'])")"
+export PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY="$(pulumi env open pulumi/marketing/pulumi-events --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['pulumiConfig']['pulumi-events-infra:meetupJwtSigningKey'])")"
+export PULUMI_EVENTS_MEETUP_JWT_KEY_ID="$(cd deploy && pulumi config get meetupJwtKeyId)"
+export PULUMI_EVENTS_MEETUP_MEMBER_ID="$(cd deploy && pulumi config get meetupMemberId)"
+export PULUMI_EVENTS_LUMA_API_KEY="$(pulumi env open pulumi/marketing/pulumi-events --format json | python3 -c "import sys,json; print(json.load(sys.stdin)['pulumiConfig']['pulumi-events-infra:lumaApiKey'])")"
+
+uv run pulumi-events
+```
+
+> **Note:** Do not set `PULUMI_EVENTS_GOOGLE_CLIENT_ID` / `PULUMI_EVENTS_GOOGLE_CLIENT_SECRET`
+> for local dev — Google OAuth blocks Claude Desktop's `mcp-remote` with 401 loops.
+
+> **Note:** `pulumi env run pulumi-idp/auth` only provides `CLIENT_ID` and `CLIENT_SECRET`
+> (read-only OAuth). Use the JWT env vars above for write operations (create/edit events).
+
+### Token cache gotcha
+
+The server caches Meetup tokens at `~/.config/pulumi-events/meetup_token.json`.
+JWT refresh only triggers when a cached token **expires**, not on cold start
+without a token. If you get "Not authenticated", ensure a (possibly expired)
+token file exists — the JWT flow runs during refresh.
 
 Env vars use `PULUMI_EVENTS_` prefix — see `src/pulumi_events/settings.py`.
 

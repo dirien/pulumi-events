@@ -10,8 +10,12 @@
       "url": "https://mcp.ai.pulumi.com/mcp"
     },
     "pulumi-events": {
-      "type": "http",
-      "url": "http://localhost:8080/mcp"
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://d3hhsm0lhey01y.cloudfront.net/mcp"
+      ]
     },
     "yaah": {
       "type": "stdio",
