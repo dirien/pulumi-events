@@ -6,13 +6,16 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 
 from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_luma_provider
 from pulumi_events.tools._errors import handle_provider_errors
+from pulumi_events.utils import download_image_to_temp
 
 __all__: list[str] = []
 
@@ -131,6 +134,7 @@ async def luma_create_event(
     meeting_url: str | None = None,
     visibility: str = "public",
     cover_image_path: str | None = None,
+    cover_image_url: str | None = None,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """Create a Luma event.
@@ -159,8 +163,16 @@ async def luma_create_event(
         geo_longitude: Venue longitude as string (e.g. "11.5820").
         meeting_url: Online meeting URL (for virtual events).
         visibility: Event visibility -- public or private.
-        cover_image_path: Local file path to a cover image. Uploaded to Luma CDN automatically.
+        cover_image_path: Local file path to a cover image (only useful when
+            the MCP server runs on the same machine as the caller). Uploaded
+            to Luma CDN automatically.
+        cover_image_url: Public HTTP(S) URL of a cover image. The server
+            downloads and uploads it to Luma — use this for remote servers.
+            Mutually exclusive with ``cover_image_path``.
     """
+    if cover_image_path is not None and cover_image_url is not None:
+        raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
+
     input_data: dict[str, Any] = {
         "name": name,
         "start_at": start_at,
@@ -180,19 +192,36 @@ async def luma_create_event(
     if meeting_url is not None:
         input_data["meeting_url"] = meeting_url
 
-    if cover_image_path is not None:
-        await ctx.report_progress(0, total=2)
-        await ctx.info("Uploading cover image to Luma CDN...")
-        cover_url = await provider.upload_image(Path(cover_image_path))
-        input_data["cover_url"] = cover_url
-        await ctx.report_progress(1, total=2)
+    temp_image: Path | None = None
+    image_requested = cover_image_path is not None or cover_image_url is not None
+    try:
+        if image_requested:
+            await ctx.report_progress(0, total=2)
+            if cover_image_url is not None:
+                await ctx.info(f"Downloading cover image from {cover_image_url}...")
+                try:
+                    temp_image = await download_image_to_temp(cover_image_url)
+                except (ValueError, httpx.HTTPError) as exc:
+                    raise ToolError(f"Failed to download cover_image_url: {exc}") from exc
+                image_path = temp_image
+            else:
+                assert cover_image_path is not None  # noqa: S101 — narrowed by image_requested
+                image_path = Path(cover_image_path)
 
-    await ctx.info(f"Creating Luma event '{name}'...")
-    result = await provider.create_event(**input_data)
+            await ctx.info("Uploading cover image to Luma CDN...")
+            cover_url = await provider.upload_image(image_path)
+            input_data["cover_url"] = cover_url
+            await ctx.report_progress(1, total=2)
 
-    if cover_image_path is not None:
-        await ctx.report_progress(2, total=2)
-    return result
+        await ctx.info(f"Creating Luma event '{name}'...")
+        result = await provider.create_event(**input_data)
+
+        if image_requested:
+            await ctx.report_progress(2, total=2)
+        return result
+    finally:
+        if temp_image is not None:
+            temp_image.unlink(missing_ok=True)
 
 
 @mcp.tool(
@@ -215,6 +244,7 @@ async def luma_update_event(
     meeting_url: str | None = None,
     visibility: str | None = None,
     cover_image_path: str | None = None,
+    cover_image_url: str | None = None,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """Update a Luma event. Only provided fields are changed.
@@ -239,8 +269,16 @@ async def luma_update_event(
         geo_longitude: New longitude as string (e.g. "11.5820").
         meeting_url: New online meeting URL.
         visibility: New visibility (public/private).
-        cover_image_path: Local file path to a cover image. Uploaded to Luma CDN automatically.
+        cover_image_path: Local file path to a cover image (only useful when
+            the MCP server runs on the same machine as the caller). Uploaded
+            to Luma CDN automatically.
+        cover_image_url: Public HTTP(S) URL of a cover image. The server
+            downloads and uploads it to Luma — use this for remote servers.
+            Mutually exclusive with ``cover_image_path``.
     """
+    if cover_image_path is not None and cover_image_url is not None:
+        raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
+
     kwargs: dict[str, Any] = {}
     if name is not None:
         kwargs["name"] = name
@@ -263,19 +301,36 @@ async def luma_update_event(
     if visibility is not None:
         kwargs["visibility"] = visibility
 
-    if cover_image_path is not None:
-        await ctx.report_progress(0, total=2)
-        await ctx.info("Uploading cover image to Luma CDN...")
-        cover_url = await provider.upload_image(Path(cover_image_path))
-        kwargs["cover_url"] = cover_url
-        await ctx.report_progress(1, total=2)
+    temp_image: Path | None = None
+    image_requested = cover_image_path is not None or cover_image_url is not None
+    try:
+        if image_requested:
+            await ctx.report_progress(0, total=2)
+            if cover_image_url is not None:
+                await ctx.info(f"Downloading cover image from {cover_image_url}...")
+                try:
+                    temp_image = await download_image_to_temp(cover_image_url)
+                except (ValueError, httpx.HTTPError) as exc:
+                    raise ToolError(f"Failed to download cover_image_url: {exc}") from exc
+                image_path = temp_image
+            else:
+                assert cover_image_path is not None  # noqa: S101 — narrowed by image_requested
+                image_path = Path(cover_image_path)
 
-    await ctx.info(f"Updating Luma event {event_id}...")
-    result = await provider.update_event(event_id, **kwargs)
+            await ctx.info("Uploading cover image to Luma CDN...")
+            cover_url = await provider.upload_image(image_path)
+            kwargs["cover_url"] = cover_url
+            await ctx.report_progress(1, total=2)
 
-    if cover_image_path is not None:
-        await ctx.report_progress(2, total=2)
-    return result
+        await ctx.info(f"Updating Luma event {event_id}...")
+        result = await provider.update_event(event_id, **kwargs)
+
+        if image_requested:
+            await ctx.report_progress(2, total=2)
+        return result
+    finally:
+        if temp_image is not None:
+            temp_image.unlink(missing_ok=True)
 
 
 @mcp.tool(

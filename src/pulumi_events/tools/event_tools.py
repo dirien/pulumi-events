@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+import httpx
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
@@ -16,6 +17,7 @@ from pulumi_events.providers.meetup.provider import ONLINE_EVENT_VENUE_ID, Meetu
 from pulumi_events.server import mcp
 from pulumi_events.tools._deps import get_meetup_provider
 from pulumi_events.tools._errors import handle_provider_errors
+from pulumi_events.utils import download_image_to_temp
 
 __all__: list[str] = []
 
@@ -263,6 +265,7 @@ async def meetup_create_event(
     pro_network_group_ids: list[str] | None = None,
     pro_network_excluded_group_ids: list[str] | None = None,
     featured_image_path: str | None = None,
+    featured_image_url: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """Create a Meetup event. For Pro network events the event is created
@@ -322,12 +325,21 @@ async def meetup_create_event(
             event. When omitted, all active groups in the network are included.
         pro_network_excluded_group_ids: Group IDs to exclude from the network
             event. Useful for skipping specific chapters.
-        featured_image_path: Local file path to a featured image. Uploaded and set automatically.
+        featured_image_path: Local file path to a featured image (only useful
+            when the MCP server runs on the same machine as the caller).
+            Uploaded to Meetup and set automatically.
+        featured_image_url: Public HTTP(S) URL of a featured image. The server
+            downloads the image and uploads it to Meetup — use this when the
+            MCP server runs remotely (e.g. on ECS). Mutually exclusive with
+            ``featured_image_path``.
     """
     _require_network_timezone(pro_network_urlname, pro_network_timezone)
     normalized_start = _normalize_start_datetime(
         start_date_time, target_timezone=pro_network_timezone
     )
+
+    if featured_image_path is not None and featured_image_url is not None:
+        raise ToolError("Provide either featured_image_path or featured_image_url, not both.")
 
     input_data: dict[str, Any] = {
         "groupUrlname": group_urlname,
@@ -370,17 +382,33 @@ async def meetup_create_event(
     # Upload featured image BEFORE creating the event so it is
     # included in the CreateEventInput and propagates to all
     # network copies.
-    if featured_image_path is not None:
-        await ctx.info("Uploading featured image...")
-        image_path = Path(featured_image_path)
-        photo_id = await provider.upload_event_photo(
-            group_urlname,
-            image_path,
-        )
-        input_data["featuredPhotoId"] = int(photo_id)
+    temp_image: Path | None = None
+    try:
+        if featured_image_url is not None:
+            await ctx.info(f"Downloading featured image from {featured_image_url}...")
+            try:
+                temp_image = await download_image_to_temp(featured_image_url)
+            except (ValueError, httpx.HTTPError) as exc:
+                raise ToolError(f"Failed to download featured_image_url: {exc}") from exc
+            image_path: Path | None = temp_image
+        elif featured_image_path is not None:
+            image_path = Path(featured_image_path)
+        else:
+            image_path = None
 
-    event = await provider.create_event(**input_data)
-    return event
+        if image_path is not None:
+            await ctx.info("Uploading featured image...")
+            photo_id = await provider.upload_event_photo(
+                group_urlname,
+                image_path,
+            )
+            input_data["featuredPhotoId"] = int(photo_id)
+
+        event = await provider.create_event(**input_data)
+        return event
+    finally:
+        if temp_image is not None:
+            temp_image.unlink(missing_ok=True)
 
 
 @mcp.tool(
@@ -414,6 +442,7 @@ async def meetup_edit_event(
     hosts: list[str] | None = None,
     topics: list[str] | None = None,
     featured_image_path: str | None = None,
+    featured_image_url: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
     """Edit an existing Meetup event. Only provided fields are updated.
@@ -436,9 +465,17 @@ async def meetup_edit_event(
         question: New RSVP question.
         hosts: New list of host member IDs.
         topics: New list of topic IDs.
-        featured_image_path: Local file path to a featured image. Uploaded and set
-            automatically. Requires group_urlname.
+        featured_image_path: Local file path to a featured image (only useful
+            when the MCP server runs on the same machine as the caller).
+            Uploaded and set automatically. Requires ``group_urlname``.
+        featured_image_url: Public HTTP(S) URL of a featured image. The server
+            downloads the image and uploads it to Meetup — use this when the
+            MCP server runs remotely (e.g. on ECS). Requires ``group_urlname``.
+            Mutually exclusive with ``featured_image_path``.
     """
+    if featured_image_path is not None and featured_image_url is not None:
+        raise ToolError("Provide either featured_image_path or featured_image_url, not both.")
+
     kwargs: dict[str, Any] = {}
     if title is not None:
         kwargs["title"] = title
@@ -461,26 +498,45 @@ async def meetup_edit_event(
     if topics is not None:
         kwargs["topics"] = topics
 
-    if featured_image_path is not None:
-        if group_urlname is None:
-            raise ToolError("group_urlname is required when setting featured_image_path")
-        await ctx.report_progress(0, total=2)
-        await ctx.info("Uploading featured image...")
-        image_path = Path(featured_image_path)
-        photo_id = await provider.upload_event_photo(
-            group_urlname,
-            image_path,
-            event_id=event_id,
-        )
-        kwargs["featuredPhotoId"] = int(photo_id)
-        await ctx.report_progress(1, total=2)
+    temp_image: Path | None = None
+    image_requested = featured_image_path is not None or featured_image_url is not None
+    try:
+        if image_requested:
+            if group_urlname is None:
+                raise ToolError(
+                    "group_urlname is required when setting featured_image_path "
+                    "or featured_image_url"
+                )
+            await ctx.report_progress(0, total=2)
+            if featured_image_url is not None:
+                await ctx.info(f"Downloading featured image from {featured_image_url}...")
+                try:
+                    temp_image = await download_image_to_temp(featured_image_url)
+                except (ValueError, httpx.HTTPError) as exc:
+                    raise ToolError(f"Failed to download featured_image_url: {exc}") from exc
+                image_path = temp_image
+            else:
+                assert featured_image_path is not None  # noqa: S101 — narrowed by image_requested
+                image_path = Path(featured_image_path)
 
-    await ctx.info(f"Editing event {event_id}...")
-    result = await provider.edit_event(event_id, **kwargs)
+            await ctx.info("Uploading featured image...")
+            photo_id = await provider.upload_event_photo(
+                group_urlname,
+                image_path,
+                event_id=event_id,
+            )
+            kwargs["featuredPhotoId"] = int(photo_id)
+            await ctx.report_progress(1, total=2)
 
-    if featured_image_path is not None:
-        await ctx.report_progress(2, total=2)
-    return result
+        await ctx.info(f"Editing event {event_id}...")
+        result = await provider.edit_event(event_id, **kwargs)
+
+        if image_requested:
+            await ctx.report_progress(2, total=2)
+        return result
+    finally:
+        if temp_image is not None:
+            temp_image.unlink(missing_ok=True)
 
 
 @mcp.tool(
