@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     auto_open_browser: bool = False
     meetup_pro_network_urlname: str = "pugs"
 
+    # Default theme color applied when creating Luma events (empty string disables).
+    luma_default_tint_color: str = "#2f2356"
+
     # -- Deployment settings --
     base_url: str = ""  # e.g. "https://d1234abcd.cloudfront.net"
     meetup_token_backend: str = "file"  # "file" | "env"

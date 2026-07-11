@@ -13,7 +13,8 @@ from fastmcp.server.context import Context
 
 from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.server import mcp
-from pulumi_events.tools._deps import get_luma_provider
+from pulumi_events.settings import Settings
+from pulumi_events.tools._deps import get_luma_provider, get_settings
 from pulumi_events.tools._errors import handle_provider_errors
 from pulumi_events.utils import download_image_to_temp
 
@@ -137,6 +138,7 @@ async def luma_create_event(
     cover_image_url: str | None = None,
     tint_color: str | None = None,
     provider: LumaProvider = Depends(get_luma_provider),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Create a Luma event.
 
@@ -172,7 +174,9 @@ async def luma_create_event(
             Mutually exclusive with ``cover_image_path``.
         tint_color: Theme color for the event page as a hex string
             (e.g. "#bb2dc7"). Luma derives the page theme from it;
-            alpha channels are stripped automatically.
+            alpha channels are stripped automatically. When omitted, the
+            server-configured default (PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR)
+            is applied.
     """
     if cover_image_path is not None and cover_image_url is not None:
         raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
@@ -195,8 +199,9 @@ async def luma_create_event(
         input_data["geo_longitude"] = geo_longitude
     if meeting_url is not None:
         input_data["meeting_url"] = meeting_url
-    if tint_color is not None:
-        input_data["tint_color"] = tint_color
+    tint = tint_color or settings.luma_default_tint_color
+    if tint:
+        input_data["tint_color"] = tint
 
     temp_image: Path | None = None
     image_requested = cover_image_path is not None or cover_image_url is not None
@@ -284,7 +289,8 @@ async def luma_update_event(
             Mutually exclusive with ``cover_image_path``.
         tint_color: New theme color for the event page as a hex string
             (e.g. "#bb2dc7"). Luma derives the page theme from it;
-            alpha channels are stripped automatically.
+            alpha channels are stripped automatically. Unlike create, no
+            default is applied — the color only changes when provided.
     """
     if cover_image_path is not None and cover_image_url is not None:
         raise ToolError("Provide either cover_image_path or cover_image_url, not both.")

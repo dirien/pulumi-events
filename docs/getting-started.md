@@ -230,6 +230,8 @@ Supported formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
 
 `luma_create_event` and `luma_update_event` accept `tint_color` — a hex color string (e.g. `#bb2dc7`) that sets the event page theme. Luma derives contrast-adjusted shades from it; alpha channels are stripped automatically.
 
+When `tint_color` is omitted on create, the server applies the configured default (`PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR`, ships as `#2f2356`; set it to an empty string to disable). Updates never apply the default. In the cloud deployment the value comes from the `marketing/pulumi-events` ESC environment key `pulumi-events-infra:lumaDefaultTintColor`.
+
 ### Cross-Platform Events
 
 You can ask the LLM to copy events between platforms:

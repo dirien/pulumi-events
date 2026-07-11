@@ -125,6 +125,8 @@ Supported image formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
 
 Pass `tint_color` (a hex string, e.g. `"#bb2dc7"`) to `luma_create_event` or `luma_update_event` to set the event page theme color. Luma derives contrast-adjusted shades from it; alpha channels are stripped automatically. There is no API field for custom background images — only `cover_url` and `tint_color`.
 
+New events default to `#2f2356` when `tint_color` is omitted. Configure via `PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR` (empty string disables the default); the cloud deployment reads it from the `marketing/pulumi-events` ESC environment (`pulumi-events-infra:lumaDefaultTintColor`). Updates never apply the default — an existing color is only changed when `tint_color` is passed explicitly.
+
 ### Cross-Platform: Meetup to Luma
 
 When copying an event from Meetup to Luma, the LLM should look up the venue's **Google Maps place ID** and pass it as `geo_address_json`:
@@ -161,6 +163,7 @@ All settings are loaded from environment variables with the `PULUMI_EVENTS_` pre
 | `PULUMI_EVENTS_AUTH_TOKEN` | — | Bearer token for MCP endpoint auth (optional) |
 | `PULUMI_EVENTS_AUTO_OPEN_BROWSER` | `false` | Auto-open browser for OAuth login |
 | `PULUMI_EVENTS_MEETUP_PRO_NETWORK_URLNAME` | `pugs` | Default Meetup Pro network URL name |
+| `PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR` | `#2f2356` | Default theme color for new Luma events (empty disables) |
 | `PULUMI_EVENTS_BASE_URL` | — | Public URL override (e.g. CloudFront domain) |
 | `PULUMI_EVENTS_MEETUP_JWT_SIGNING_KEY` | — | RSA private key PEM for Meetup JWT auth |
 | `PULUMI_EVENTS_MEETUP_JWT_KEY_ID` | — | Meetup signing key ID (kid) |

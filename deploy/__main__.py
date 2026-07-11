@@ -23,6 +23,7 @@ google_client_secret = config.require_secret("googleClientSecret")
 meetup_jwt_signing_key = config.get_secret("meetupJwtSigningKey") or ""
 meetup_jwt_key_id = config.get("meetupJwtKeyId") or ""
 meetup_member_id = config.get("meetupMemberId") or ""
+luma_default_tint_color = config.get("lumaDefaultTintColor") or ""
 
 # ---------------------------------------------------------------------------
 # VPC
@@ -356,6 +357,7 @@ task_definition = aws.ecs.TaskDefinition(
             cloudfront_domain,
             meetup_jwt_key_id,
             meetup_member_id,
+            luma_default_tint_color,
         ).apply(
             lambda args: json.dumps(
                 [
@@ -397,6 +399,10 @@ task_definition = aws.ecs.TaskDefinition(
                             {
                                 "name": "PULUMI_EVENTS_MEETUP_MEMBER_ID",
                                 "value": args[5],
+                            },
+                            {
+                                "name": "PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR",
+                                "value": args[6],
                             },
                         ],
                         "secrets": [

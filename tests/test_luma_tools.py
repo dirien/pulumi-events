@@ -35,7 +35,7 @@ class StubProvider:
 
 
 class TestTintColor:
-    async def test_create_passes_tint_color(self) -> None:
+    async def test_create_explicit_tint_color_wins_over_default(self) -> None:
         provider = StubProvider()
         await luma_create_event(
             name="Test",
@@ -44,10 +44,11 @@ class TestTintColor:
             ctx=StubContext(),
             tint_color="#bb2dc7",
             provider=provider,
+            settings=Settings(),
         )
         assert provider.payload["tint_color"] == "#bb2dc7"
 
-    async def test_create_omits_tint_color_by_default(self) -> None:
+    async def test_create_applies_configured_default(self) -> None:
         provider = StubProvider()
         await luma_create_event(
             name="Test",
@@ -55,6 +56,19 @@ class TestTintColor:
             end_at="2026-08-01T18:00:00Z",
             ctx=StubContext(),
             provider=provider,
+            settings=Settings(),
+        )
+        assert provider.payload["tint_color"] == "#2f2356"
+
+    async def test_create_empty_default_omits_tint_color(self) -> None:
+        provider = StubProvider()
+        await luma_create_event(
+            name="Test",
+            start_at="2026-08-01T16:00:00Z",
+            end_at="2026-08-01T18:00:00Z",
+            ctx=StubContext(),
+            provider=provider,
+            settings=Settings(luma_default_tint_color=""),
         )
         assert "tint_color" not in provider.payload
 
@@ -69,7 +83,8 @@ class TestTintColor:
         assert provider.event_id == "evt-123"
         assert provider.payload == {"tint_color": "#bb2dc7"}
 
-    async def test_update_omits_tint_color_by_default(self) -> None:
+    async def test_update_applies_no_default_tint_color(self) -> None:
+        # Partial updates must never clobber a manually-set color with the default.
         provider = StubProvider()
         await luma_update_event(
             event_id="evt-123",
@@ -117,7 +132,21 @@ class TestTintColorWire:
             ctx=StubContext(),
             tint_color="#bb2dc7",
             provider=self._provider(captured),
+            settings=Settings(),
         )
         (request,) = captured
         assert request.url.path == "/v1/event/create"
         assert json.loads(request.content)["tint_color"] == "#bb2dc7"
+
+    async def test_create_sends_default_tint_color_on_the_wire(self) -> None:
+        captured: list[httpx.Request] = []
+        await luma_create_event(
+            name="Test",
+            start_at="2026-08-01T16:00:00Z",
+            end_at="2026-08-01T18:00:00Z",
+            ctx=StubContext(),
+            provider=self._provider(captured),
+            settings=Settings(),
+        )
+        (request,) = captured
+        assert json.loads(request.content)["tint_color"] == "#2f2356"
