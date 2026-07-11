@@ -106,8 +106,8 @@ Then point Claude Code at `http://127.0.0.1:8080/mcp`.
 |------|------|-------------|
 | `luma_list_events` | `luma`, `events` | List events from your Luma calendar |
 | `luma_get_event` | `luma`, `events` | Get full details of a Luma event by API ID |
-| `luma_create_event` | `luma`, `events` | Create a Luma event. Supports `cover_image_path` for cover image upload |
-| `luma_update_event` | `luma`, `events` | Update a Luma event. Supports `cover_image_path` for cover image upload |
+| `luma_create_event` | `luma`, `events` | Create a Luma event. Supports `cover_image_path` for cover image upload and `tint_color` for page theming |
+| `luma_update_event` | `luma`, `events` | Update a Luma event. Supports `cover_image_path` for cover image upload and `tint_color` for page theming |
 | `luma_cancel_event` | `luma`, `events` | Cancel a Luma event |
 | `luma_list_people` | `luma`, `people` | List all people from your Luma calendar |
 | `luma_list_guests` | `luma`, `guests` | List guests for a Luma event |
@@ -120,6 +120,10 @@ Both platforms support event cover images through their create/update tools:
 - **Meetup**: Pass `featured_image_path` (local file path) to `meetup_create_event` or `meetup_edit_event`. The server uploads via Meetup's `createGroupEventPhoto` mutation and sets the `featuredPhotoId`. For create, the event is created first, then the photo is uploaded and attached via an edit (since Meetup's `CreateEventInput` doesn't support `featuredPhotoId`).
 
 Supported image formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
+
+### Event Theming (Luma)
+
+Pass `tint_color` (a hex string, e.g. `"#bb2dc7"`) to `luma_create_event` or `luma_update_event` to set the event page theme color. Luma derives contrast-adjusted shades from it; alpha channels are stripped automatically. There is no API field for custom background images — only `cover_url` and `tint_color`.
 
 ### Cross-Platform: Meetup to Luma
 

@@ -212,6 +212,7 @@ Read luma://self
 Create a Luma event called "Demo Night" on March 15
 Create a Luma event with cover image /tmp/event-banner.jpg
 Update luma event evt-abc123 with a new cover image /tmp/new-banner.png
+Set the theme color of luma event evt-abc123 to #bb2dc7
 List guests for luma event evt-abc123
 List all people in my Luma calendar
 ```
@@ -224,6 +225,10 @@ Both `meetup_create_event` / `meetup_edit_event` and `luma_create_event` / `luma
 - **Meetup**: pass `featured_image_path` (requires `group_urlname`) — uploads via Meetup's photo API and sets the featured photo
 
 Supported formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
+
+### Event Theming (Luma)
+
+`luma_create_event` and `luma_update_event` accept `tint_color` — a hex color string (e.g. `#bb2dc7`) that sets the event page theme. Luma derives contrast-adjusted shades from it; alpha channels are stripped automatically.
 
 ### Cross-Platform Events
 

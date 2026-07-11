@@ -37,9 +37,7 @@ class TokenStore:
 
         self._settings = settings
         self._lock = lock or _asyncio.Lock()
-        self._backend = backend or FileTokenBackend(
-            settings.token_cache_dir / "meetup_token.json"
-        )
+        self._backend = backend or FileTokenBackend(settings.token_cache_dir / "meetup_token.json")
         self._token_data: dict[str, object] | None = None
         self._token_data = self._backend.load()
 
@@ -123,4 +121,3 @@ class TokenStore:
 
         self.store_token(resp.json())
         logger.info("Meetup token refreshed successfully")
-
