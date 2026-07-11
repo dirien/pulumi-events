@@ -6,10 +6,10 @@ readme = "README.md"
 authors = [{ name = "Engin Diri", email = "engin.diri@ediri.de" }]
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.0.2",
-    "httpx>=0.28",
-    "pydantic>=2.0",
-    "pydantic-settings>=2.0",
+    "fastmcp>=3.4.4",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.2",
 ]
 
 [project.scripts]
@@ -51,8 +51,8 @@ known-first-party = ["pulumi_events"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
-    "pytest-asyncio>=1.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [tool.pytest.ini_options]

@@ -135,6 +135,7 @@ async def luma_create_event(
     visibility: str = "public",
     cover_image_path: str | None = None,
     cover_image_url: str | None = None,
+    tint_color: str | None = None,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """Create a Luma event.
@@ -169,6 +170,9 @@ async def luma_create_event(
         cover_image_url: Public HTTP(S) URL of a cover image. The server
             downloads and uploads it to Luma — use this for remote servers.
             Mutually exclusive with ``cover_image_path``.
+        tint_color: Theme color for the event page as a hex string
+            (e.g. "#bb2dc7"). Luma derives the page theme from it;
+            alpha channels are stripped automatically.
     """
     if cover_image_path is not None and cover_image_url is not None:
         raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
@@ -191,6 +195,8 @@ async def luma_create_event(
         input_data["geo_longitude"] = geo_longitude
     if meeting_url is not None:
         input_data["meeting_url"] = meeting_url
+    if tint_color is not None:
+        input_data["tint_color"] = tint_color
 
     temp_image: Path | None = None
     image_requested = cover_image_path is not None or cover_image_url is not None
@@ -245,6 +251,7 @@ async def luma_update_event(
     visibility: str | None = None,
     cover_image_path: str | None = None,
     cover_image_url: str | None = None,
+    tint_color: str | None = None,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """Update a Luma event. Only provided fields are changed.
@@ -275,6 +282,9 @@ async def luma_update_event(
         cover_image_url: Public HTTP(S) URL of a cover image. The server
             downloads and uploads it to Luma — use this for remote servers.
             Mutually exclusive with ``cover_image_path``.
+        tint_color: New theme color for the event page as a hex string
+            (e.g. "#bb2dc7"). Luma derives the page theme from it;
+            alpha channels are stripped automatically.
     """
     if cover_image_path is not None and cover_image_url is not None:
         raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
@@ -300,6 +310,8 @@ async def luma_update_event(
         kwargs["meeting_url"] = meeting_url
     if visibility is not None:
         kwargs["visibility"] = visibility
+    if tint_color is not None:
+        kwargs["tint_color"] = tint_color
 
     temp_image: Path | None = None
     image_requested = cover_image_path is not None or cover_image_url is not None
