@@ -97,7 +97,13 @@ Stateless mode means each request creates a fresh transport — no stale session
 
 The server is already deployed to AWS and available at `https://<your-cloudfront-domain>`. This is the easiest way to get started -- no local setup required.
 
-Add to your Claude Desktop config (`claude_desktop_config.json`):
+**Claude Code (recommended):** connect over native HTTP transport -- Claude runs the OAuth flow itself and manages tokens, no proxy process involved:
+
+```bash
+claude mcp add --transport http pulumi-events https://<your-cloudfront-domain>/mcp
+```
+
+**Claude Desktop** (or any stdio-only client): bridge through `mcp-remote` in `claude_desktop_config.json`:
 
 ```json
 {
@@ -111,6 +117,13 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
 ```
 
 On first connect, you'll authenticate with your `@pulumi.com` Google account. Meetup and Luma are pre-authenticated on the server -- no extra login steps.
+
+**Headless clients** (CI, sandboxes, scheduled agents) can't open a browser for OAuth. When `PULUMI_EVENTS_AUTH_TOKEN` is set on the server, that pre-shared token is accepted alongside Google OAuth -- pass it as a header and skip the browser entirely:
+
+```bash
+claude mcp add --transport http pulumi-events https://<your-cloudfront-domain>/mcp \
+  --header "Authorization: Bearer <token>"
+```
 
 ## 5. Connect Claude Code (local)
 

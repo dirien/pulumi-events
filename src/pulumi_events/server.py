@@ -14,6 +14,7 @@ from fastmcp.server.auth import StaticTokenVerifier
 from fastmcp.server.auth.providers.google import GoogleProvider as GoogleProvider
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
+from mcp.server.auth.provider import AccessToken
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
@@ -94,7 +95,44 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         }
 
 
+class GoogleProviderWithStaticToken(GoogleProvider):
+    """Google OAuth for interactive clients plus an optional pre-shared bearer token.
+
+    Headless clients (CI, sandboxes, scheduled agents) cannot complete the
+    interactive OAuth flow. When PULUMI_EVENTS_AUTH_TOKEN is set alongside the
+    Google credentials, requests bearing that token are accepted directly;
+    every other token falls through to the normal Google verification.
+    """
+
+    def __init__(
+        self,
+        *args: Any,
+        static_verifier: StaticTokenVerifier | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._static_verifier = static_verifier
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        if self._static_verifier is not None:
+            access = await self._static_verifier.verify_token(token)
+            if access is not None:
+                return access
+        return await super().verify_token(token)
+
+
 _settings = Settings()
+_static_verifier: StaticTokenVerifier | None = None
+if _settings.auth_token.get_secret_value():
+    _static_verifier = StaticTokenVerifier(
+        tokens={
+            _settings.auth_token.get_secret_value(): {
+                "client_id": "pulumi-events-client",
+                "scopes": ["full"],
+            },
+        },
+    )
+
 _auth: StaticTokenVerifier | GoogleProvider | None = None
 if (
     _settings.google_client_id.get_secret_value()
@@ -105,7 +143,7 @@ if (
     else:
         _host = "localhost" if _settings.server_host == "127.0.0.1" else _settings.server_host
         _base_url = f"http://{_host}:{_settings.server_port}"
-    _auth = GoogleProvider(
+    _auth = GoogleProviderWithStaticToken(
         client_id=_settings.google_client_id.get_secret_value(),
         client_secret=_settings.google_client_secret.get_secret_value(),
         base_url=_base_url,
@@ -115,16 +153,10 @@ if (
             "profile",
         ],
         require_authorization_consent=False,
+        static_verifier=_static_verifier,
     )
-elif _settings.auth_token.get_secret_value():
-    _auth = StaticTokenVerifier(
-        tokens={
-            _settings.auth_token.get_secret_value(): {
-                "client_id": "pulumi-events-client",
-                "scopes": ["full"],
-            },
-        },
-    )
+else:
+    _auth = _static_verifier
 
 mcp = FastMCP(
     "pulumi-events",
