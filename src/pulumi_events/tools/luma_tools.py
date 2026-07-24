@@ -411,3 +411,41 @@ async def luma_list_guests(
     """
     await ctx.info(f"Fetching guests for Luma event {event_id}...")
     return await provider.list_all_guests(event_id, limit=limit)
+
+
+@mcp.tool(
+    tags={"luma", "guests"},
+    timeout=120.0,
+)
+@handle_provider_errors
+async def luma_send_invites(
+    event_id: str,
+    emails: list[str],
+    ctx: Context,
+    message: str | None = None,
+    provider: LumaProvider = Depends(get_luma_provider),
+) -> dict[str, Any]:
+    """Send Luma invite emails to people for an event.
+
+    Each address receives an invitation to the event. People who are not
+    already on the guest list are added and invited.
+
+    Args:
+        event_id: The Luma event API ID (evt-...).
+        emails: Email addresses to invite (at least one).
+        message: Optional note included in every invite (max 200 characters).
+    """
+    if not emails:
+        raise ToolError("Provide at least one email address to invite.")
+    if message is not None and len(message) > 200:
+        raise ToolError("message must be 200 characters or fewer.")
+
+    guests: list[dict[str, Any]] = []
+    for email in emails:
+        guest: dict[str, Any] = {"email": email}
+        if message is not None:
+            guest["message"] = message
+        guests.append(guest)
+
+    await ctx.info(f"Sending {len(guests)} Luma invite(s) for event {event_id}...")
+    return await provider.send_invites(event_id, guests)

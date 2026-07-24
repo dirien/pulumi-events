@@ -284,7 +284,7 @@ The server uses FastMCP's middleware for reliability and performance:
 
 ### Tool Metadata
 
-All 22 tools include metadata for better LLM integration:
+All 23 tools include metadata for better LLM integration:
 
 - **Tags** — platform (`meetup`, `luma`) and domain (`events`, `groups`, `members`, etc.) for filtering
 - **Timeouts** — 120s on upload-capable tools and all auto-paginating list tools to prevent hangs

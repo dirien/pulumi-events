@@ -14,7 +14,7 @@ Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API
 
 ## Features
 
-- **22 tools** across two platforms (Meetup + Luma), tagged by platform and domain
+- **23 tools** across two platforms (Meetup + Luma), tagged by platform and domain
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
 - **Cover image upload** — pass a local file path when creating/updating events; the server handles CDN upload automatically (Luma presigned URL, Meetup two-step photo upload)
 - Auto-pagination on all list tools — single tool call returns all results
@@ -124,6 +124,7 @@ Then point Claude Code at `http://127.0.0.1:8080/mcp`.
 | `luma_cancel_event` | `luma`, `events` | Cancel a Luma event |
 | `luma_list_people` | `luma`, `people` | List all people from your Luma calendar |
 | `luma_list_guests` | `luma`, `guests` | List guests for a Luma event |
+| `luma_send_invites` | `luma`, `guests` | Send invite emails to people for a Luma event (optional per-invite message) |
 
 ### Image Upload
 

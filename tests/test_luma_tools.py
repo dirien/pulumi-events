@@ -6,11 +6,17 @@ import json
 from typing import Any
 
 import httpx
+import pytest
+from fastmcp.exceptions import ToolError
 
 from pulumi_events.providers.luma.client import LumaClient
 from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.settings import Settings
-from pulumi_events.tools.luma_tools import luma_create_event, luma_update_event
+from pulumi_events.tools.luma_tools import (
+    luma_create_event,
+    luma_send_invites,
+    luma_update_event,
+)
 
 
 class StubContext:
@@ -150,3 +156,70 @@ class TestTintColorWire:
         )
         (request,) = captured
         assert json.loads(request.content)["tint_color"] == "#2f2356"
+
+
+class TestSendInvites:
+    """Full-stack: tool -> provider -> real client -> captured HTTP request."""
+
+    def _provider(self, captured: list[httpx.Request]) -> LumaProvider:
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={})
+
+        http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        settings = Settings(luma_api_key="test-key")
+        return LumaProvider(LumaClient(http, settings))
+
+    async def test_sends_one_guest_per_email_with_message(self) -> None:
+        captured: list[httpx.Request] = []
+        await luma_send_invites(
+            event_id="evt-123",
+            emails=["a@example.com", "b@example.com"],
+            ctx=StubContext(),
+            message="See you there",
+            provider=self._provider(captured),
+        )
+        (request,) = captured
+        assert request.url.path == "/v1/events/guests/send-invites"
+        assert request.headers["x-luma-api-key"] == "test-key"
+        assert json.loads(request.content) == {
+            "event_id": "evt-123",
+            "guests": [
+                {"email": "a@example.com", "message": "See you there"},
+                {"email": "b@example.com", "message": "See you there"},
+            ],
+        }
+
+    async def test_omits_message_when_not_provided(self) -> None:
+        captured: list[httpx.Request] = []
+        await luma_send_invites(
+            event_id="evt-123",
+            emails=["a@example.com"],
+            ctx=StubContext(),
+            provider=self._provider(captured),
+        )
+        (request,) = captured
+        assert json.loads(request.content)["guests"] == [{"email": "a@example.com"}]
+
+    async def test_empty_emails_rejected(self) -> None:
+        captured: list[httpx.Request] = []
+        with pytest.raises(ToolError):
+            await luma_send_invites(
+                event_id="evt-123",
+                emails=[],
+                ctx=StubContext(),
+                provider=self._provider(captured),
+            )
+        assert captured == []
+
+    async def test_message_over_200_chars_rejected(self) -> None:
+        captured: list[httpx.Request] = []
+        with pytest.raises(ToolError):
+            await luma_send_invites(
+                event_id="evt-123",
+                emails=["a@example.com"],
+                ctx=StubContext(),
+                message="x" * 201,
+                provider=self._provider(captured),
+            )
+        assert captured == []

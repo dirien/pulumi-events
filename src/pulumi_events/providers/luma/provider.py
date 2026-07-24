@@ -74,6 +74,7 @@ class LumaProvider:
             ProviderCapability.EDIT_EVENT,
             ProviderCapability.CANCEL_EVENT,
             ProviderCapability.LIST_GUESTS,
+            ProviderCapability.SEND_INVITES,
             ProviderCapability.USER_PROFILE,
             ProviderCapability.LIST_PEOPLE,
         }
@@ -234,3 +235,19 @@ class LumaProvider:
             "total": len(entries),
             "guests": [_summarize_guest(e) for e in entries],
         }
+
+    async def send_invites(
+        self,
+        event_id: str,
+        guests: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Send invite emails to guests of an event.
+
+        Each guest dict must contain an ``email`` and may include an optional
+        ``message`` (max 200 chars). People who are not yet guests are added
+        and invited.
+        """
+        return await self._client.post(
+            "/events/guests/send-invites",
+            {"event_id": event_id, "guests": guests},
+        )
