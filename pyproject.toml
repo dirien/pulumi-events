@@ -33,7 +33,6 @@ select = [
     "SIM", "RUF", "ANN", "ASYNC", "S", "PTH",
 ]
 ignore = [
-    "ANN101", "ANN102",
     "ANN401",   # Any in **kwargs — unavoidable for protocol / provider APIs
     "B008",     # Depends() in defaults — standard FastMCP pattern
     "S603",     # subprocess calls — needed for Pulumi ESC
@@ -53,6 +52,7 @@ known-first-party = ["pulumi_events"]
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.0",
 ]
 
 [tool.pytest.ini_options]

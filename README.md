@@ -49,7 +49,13 @@ See the [Getting Started guide](docs/getting-started.md) for full setup instruct
 
 ### Cloud (deployed)
 
-The server runs on AWS ECS Fargate behind CloudFront. Connect Claude Desktop or Claude Code directly:
+The server runs on AWS ECS Fargate behind CloudFront. Claude Code and Claude Desktop speak remote HTTP MCP natively — no proxy process needed:
+
+```bash
+claude mcp add --transport http pulumi-events https://<your-cloudfront-domain>/mcp
+```
+
+Claude handles the Google OAuth flow itself (`/mcp` → authenticate) and manages token refresh. For clients that only support stdio servers, fall back to `mcp-remote`:
 
 ```json
 {
@@ -62,7 +68,14 @@ The server runs on AWS ECS Fargate behind CloudFront. Connect Claude Desktop or 
 }
 ```
 
-Google OAuth handles MCP auth. Meetup authenticates automatically via JWT on server startup. The CloudFront domain is output by `pulumi stack output cloudfront_url` after deployment.
+**Headless environments** (CI, sandboxes, scheduled agents) can't complete a browser OAuth flow. Set `PULUMI_EVENTS_AUTH_TOKEN` on the server and connect with the pre-shared token instead — it works alongside Google OAuth, not instead of it:
+
+```bash
+claude mcp add --transport http pulumi-events https://<your-cloudfront-domain>/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+Google OAuth handles interactive MCP auth. Meetup authenticates automatically via JWT on server startup. The CloudFront domain is output by `pulumi stack output cloudfront_url` after deployment.
 
 ### Local development
 
@@ -174,7 +187,12 @@ All settings are loaded from environment variables with the `PULUMI_EVENTS_` pre
 
 ## Authentication
 
-The MCP endpoint supports optional bearer token authentication. When `PULUMI_EVENTS_AUTH_TOKEN` is set, all MCP requests must include an `Authorization: Bearer <token>` header. When unset, the server runs without auth (the default for local development).
+The MCP endpoint supports two auth modes that compose:
+
+- **Google OAuth** (when `PULUMI_EVENTS_GOOGLE_CLIENT_ID`/`_SECRET` are set) — the interactive flow for browser-capable clients.
+- **Pre-shared bearer token** (when `PULUMI_EVENTS_AUTH_TOKEN` is set) — for headless clients. If Google credentials are also configured, the token is accepted *in addition to* Google-issued tokens; requests bearing neither are rejected. With only the token set, all MCP requests must include the `Authorization: Bearer <token>` header.
+
+When neither is set, the server runs without auth (the default for local development).
 
 To enable:
 
