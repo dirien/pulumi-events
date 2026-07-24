@@ -128,7 +128,9 @@ if _settings.auth_token.get_secret_value():
         tokens={
             _settings.auth_token.get_secret_value(): {
                 "client_id": "pulumi-events-client",
-                "scopes": ["full"],
+                # Must satisfy the Google provider's required_scopes below, or
+                # RequireAuthMiddleware rejects the static token with 403.
+                "scopes": ["openid", "email", "profile"],
             },
         },
     )
