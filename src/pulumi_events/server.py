@@ -107,11 +107,24 @@ class GoogleProviderWithStaticToken(GoogleProvider):
     def __init__(
         self,
         *args: Any,
-        static_verifier: StaticTokenVerifier | None = None,
+        static_token: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._static_verifier = static_verifier
+        self._static_verifier: StaticTokenVerifier | None = None
+        if static_token:
+            self._static_verifier = StaticTokenVerifier(
+                tokens={
+                    static_token: {
+                        "client_id": "pulumi-events-client",
+                        # Mirror the provider's own required_scopes so the static
+                        # token satisfies RequireAuthMiddleware. GoogleProvider
+                        # expands "email"/"profile" into full Google scope URLs,
+                        # so deriving from self.required_scopes avoids drift.
+                        "scopes": list(self.required_scopes or []),
+                    },
+                },
+            )
 
     async def verify_token(self, token: str) -> AccessToken | None:
         if self._static_verifier is not None:
@@ -122,18 +135,7 @@ class GoogleProviderWithStaticToken(GoogleProvider):
 
 
 _settings = Settings()
-_static_verifier: StaticTokenVerifier | None = None
-if _settings.auth_token.get_secret_value():
-    _static_verifier = StaticTokenVerifier(
-        tokens={
-            _settings.auth_token.get_secret_value(): {
-                "client_id": "pulumi-events-client",
-                # Must satisfy the Google provider's required_scopes below, or
-                # RequireAuthMiddleware rejects the static token with 403.
-                "scopes": ["openid", "email", "profile"],
-            },
-        },
-    )
+_static_token = _settings.auth_token.get_secret_value()
 
 _auth: StaticTokenVerifier | GoogleProvider | None = None
 if (
@@ -155,10 +157,19 @@ if (
             "profile",
         ],
         require_authorization_consent=False,
-        static_verifier=_static_verifier,
+        static_token=_static_token or None,
     )
-else:
-    _auth = _static_verifier
+elif _static_token:
+    # No Google OAuth configured — static token is the only auth, and there is
+    # no required_scopes gate to satisfy, so any non-empty scope works.
+    _auth = StaticTokenVerifier(
+        tokens={
+            _static_token: {
+                "client_id": "pulumi-events-client",
+                "scopes": ["full"],
+            },
+        },
+    )
 
 mcp = FastMCP(
     "pulumi-events",
