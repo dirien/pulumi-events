@@ -11,7 +11,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import SecretStr
 
-__all__ = ["TokenBackend", "FileTokenBackend", "EnvTokenBackend"]
+__all__ = ["EnvTokenBackend", "FileTokenBackend", "TokenBackend"]
 
 logger = logging.getLogger(__name__)
 

@@ -343,7 +343,7 @@ class MeetupProvider:
         event_id: str | None = None,
     ) -> str:
         """Upload a photo and return the photo ID."""
-        if not file_path.is_file():
+        if not file_path.is_file():  # noqa: ASYNC240 -- cheap stat, not worth anyio
             msg = f"Image file not found: {file_path}"
             raise ProviderError(msg)
 

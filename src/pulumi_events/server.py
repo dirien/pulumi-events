@@ -272,14 +272,14 @@ import pulumi_events.tools.search_tools as _src  # noqa: E402
 import pulumi_events.tools.venue_tools as _ven  # noqa: E402
 
 __all__ = [  # keep side-effect imports from being flagged as unused
-    "mcp",
-    "_lres",
-    "_mres",
     "_evt",
     "_grp",
+    "_lres",
     "_ltools",
     "_mem",
+    "_mres",
     "_plt",
     "_src",
     "_ven",
+    "mcp",
 ]

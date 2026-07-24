@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     meetup_graphql_endpoint_v2: str = "https://api.meetup.com/gql2"
     luma_api_endpoint: str = "https://public-api.luma.com/v1"
     meetup_auth_endpoint: str = "https://secure.meetup.com/oauth2/authorize"
-    meetup_token_endpoint: str = "https://secure.meetup.com/oauth2/access"
+    meetup_token_endpoint: str = "https://secure.meetup.com/oauth2/access"  # noqa: S105
 
     # Redirect URI kept as plain str — may use http:// or custom schemes.
     meetup_redirect_uri: str = "http://127-0-0-1.nip.io:8080/auth/meetup/callback"
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # -- Deployment settings --
     base_url: str = ""  # e.g. "https://d1234abcd.cloudfront.net"
-    meetup_token_backend: str = "file"  # "file" | "env"
+    meetup_token_backend: str = "file"  # noqa: S105 -- backend name: "file" | "env"
     meetup_token_json: SecretStr = SecretStr("")  # token JSON for "env" backend
 
     # -- Meetup JWT auth (headless, server-to-server) --
