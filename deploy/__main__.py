@@ -57,7 +57,7 @@ image = docker_build.Image(
         tags=[repo.repository_url.apply(lambda url: f"{url}:latest")],
         context=docker_build.BuildContextArgs(location=".."),
         dockerfile=docker_build.DockerfileArgs(location="../Dockerfile"),
-        platforms=[docker_build.Platform.LINUX_AMD64],
+        platforms=[docker_build.Platform.LINUX_ARM64],
         push=True,
         registries=[
             docker_build.RegistryArgs(
@@ -348,6 +348,11 @@ task_definition = aws.ecs.TaskDefinition(
         memory=str(container_memory),
         network_mode="awsvpc",
         requires_compatibilities=["FARGATE"],
+        # Graviton: the image is built for arm64, so the task must run on it too.
+        runtime_platform=aws.ecs.TaskDefinitionRuntimePlatformArgs(
+            cpu_architecture="ARM64",
+            operating_system_family="LINUX",
+        ),
         execution_role_arn=execution_role.arn,
         task_role_arn=task_role.arn,
         container_definitions=pulumi.Output.all(
