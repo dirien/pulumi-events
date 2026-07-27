@@ -77,6 +77,9 @@ Env vars use `PULUMI_EVENTS_` prefix — see `src/pulumi_events/settings.py`.
 2. **After each change**: Run lint → single test
 3. **Before committing**: Run full test suite if changes affect >2 files or touch shared code
 4. **Before claiming done**: Show test output as evidence
+5. **After deploying**: `pulumi up` returns once the *stack* converges, before ECS has
+   finished replacing tasks — the old image keeps serving for a while. Confirm the change
+   is live against the endpoint itself (`tools/list` over `/mcp`), not the Pulumi output.
 
 ## File Map
 ```
@@ -96,6 +99,8 @@ src/pulumi_events/
 └── tools/               # @mcp.tool handlers + _deps.py + _errors.py
 tests/conftest.py
 docs/getting-started.md
+deploy/__main__.py       # Pulumi program: ECS Fargate + ALB + CloudFront
+Dockerfile               # multi-stage uv build; context is the repo root
 ```
 
 ## Golden Samples (follow these patterns)
@@ -160,6 +165,10 @@ Then import in `server.py` at the bottom with the other tool imports.
 - **All event logic in MCP tools** — no ad-hoc scripts
 - **Meetup Pro network** — single-call create+publish, filter with `groupIds`, use `gql2` endpoint
 - **Middleware** — error handling → retry → response caching in `server.py`
+- **ARM64 Fargate** — the image builds for `linux/arm64` and the task definition pins
+  `runtimePlatform` to `ARM64`/`LINUX`. **Change both or neither** — a mismatch leaves
+  tasks unable to start. Building natively on arm64 also avoids emulation, which cannot
+  run `uv` or `groupadd` reliably.
 
 ## Checklist
 
