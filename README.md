@@ -124,7 +124,7 @@ Then point Claude Code at `http://127.0.0.1:8080/mcp`.
 | `luma_cancel_event` | `luma`, `events` | Cancel a Luma event |
 | `luma_list_people` | `luma`, `people` | List all people from your Luma calendar |
 | `luma_list_guests` | `luma`, `guests` | List guests for a Luma event |
-| `luma_send_invites` | `luma`, `guests` | Send invite emails to people for a Luma event (optional per-invite message) |
+| `luma_send_invites` | `luma`, `guests` | Send invite emails for a Luma event to an array of guests (`email` + optional `name`) |
 
 ### Image Upload
 
@@ -134,6 +134,26 @@ Both platforms support event cover images through their create/update tools:
 - **Meetup**: Pass `featured_image_path` (local file path) to `meetup_create_event` or `meetup_edit_event`. The server uploads via Meetup's `createGroupEventPhoto` mutation and sets the `featuredPhotoId`. For create, the event is created first, then the photo is uploaded and attached via an edit (since Meetup's `CreateEventInput` doesn't support `featuredPhotoId`).
 
 Supported image formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
+
+### Sending Invites (Luma)
+
+`luma_send_invites` takes an array of guests, each with a required `email` and an
+optional `name`:
+
+```json
+{
+  "event_id": "evt-abc123",
+  "guests": [
+    { "email": "ada@example.com", "name": "Ada Lovelace" },
+    { "email": "alan@example.com" }
+  ],
+  "message": "Hope to see you there!"
+}
+```
+
+`name` is ignored for people who already have a name on their Luma account.
+`message` is a single note applied to the whole batch (max 200 characters), not a
+per-guest field. People who are not yet on the guest list are added and invited.
 
 ### Event Theming (Luma)
 

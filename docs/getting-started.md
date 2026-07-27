@@ -227,6 +227,7 @@ Create a Luma event with cover image /tmp/event-banner.jpg
 Update luma event evt-abc123 with a new cover image /tmp/new-banner.png
 Set the theme color of luma event evt-abc123 to #bb2dc7
 List guests for luma event evt-abc123
+Invite ada@example.com (Ada Lovelace) and alan@example.com to luma event evt-abc123
 List all people in my Luma calendar
 ```
 

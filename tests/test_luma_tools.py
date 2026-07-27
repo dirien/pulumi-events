@@ -13,6 +13,7 @@ from pulumi_events.providers.luma.client import LumaClient
 from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.settings import Settings
 from pulumi_events.tools.luma_tools import (
+    GuestInvite,
     luma_create_event,
     luma_send_invites,
     luma_update_event,
@@ -170,11 +171,14 @@ class TestSendInvites:
         settings = Settings(luma_api_key="test-key")
         return LumaProvider(LumaClient(http, settings))
 
-    async def test_sends_one_guest_per_email_with_message(self) -> None:
+    async def test_sends_guests_with_names_and_batch_message(self) -> None:
         captured: list[httpx.Request] = []
-        await luma_send_invites(
+        result = await luma_send_invites(
             event_id="evt-123",
-            emails=["a@example.com", "b@example.com"],
+            guests=[
+                GuestInvite(email="a@example.com", name="Ada"),
+                GuestInvite(email="b@example.com"),
+            ],
             ctx=StubContext(),
             message="See you there",
             provider=self._provider(captured),
@@ -182,31 +186,42 @@ class TestSendInvites:
         (request,) = captured
         assert request.url.path == "/v1/events/guests/send-invites"
         assert request.headers["x-luma-api-key"] == "test-key"
+        # message is a top-level field, not a per-guest one, and a guest
+        # without a name omits the key rather than sending null.
         assert json.loads(request.content) == {
             "event_id": "evt-123",
             "guests": [
-                {"email": "a@example.com", "message": "See you there"},
-                {"email": "b@example.com", "message": "See you there"},
+                {"email": "a@example.com", "name": "Ada"},
+                {"email": "b@example.com"},
             ],
+            "message": "See you there",
+        }
+        assert result == {
+            "event_id": "evt-123",
+            "invited": 2,
+            "emails": ["a@example.com", "b@example.com"],
         }
 
     async def test_omits_message_when_not_provided(self) -> None:
         captured: list[httpx.Request] = []
         await luma_send_invites(
             event_id="evt-123",
-            emails=["a@example.com"],
+            guests=[GuestInvite(email="a@example.com")],
             ctx=StubContext(),
             provider=self._provider(captured),
         )
         (request,) = captured
-        assert json.loads(request.content)["guests"] == [{"email": "a@example.com"}]
+        assert json.loads(request.content) == {
+            "event_id": "evt-123",
+            "guests": [{"email": "a@example.com"}],
+        }
 
-    async def test_empty_emails_rejected(self) -> None:
+    async def test_empty_guests_rejected(self) -> None:
         captured: list[httpx.Request] = []
         with pytest.raises(ToolError):
             await luma_send_invites(
                 event_id="evt-123",
-                emails=[],
+                guests=[],
                 ctx=StubContext(),
                 provider=self._provider(captured),
             )
@@ -217,7 +232,7 @@ class TestSendInvites:
         with pytest.raises(ToolError):
             await luma_send_invites(
                 event_id="evt-123",
-                emails=["a@example.com"],
+                guests=[GuestInvite(email="a@example.com")],
                 ctx=StubContext(),
                 message="x" * 201,
                 provider=self._provider(captured),

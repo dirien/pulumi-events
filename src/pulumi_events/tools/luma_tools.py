@@ -10,6 +10,7 @@ import httpx
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
+from pydantic import BaseModel, Field
 
 from pulumi_events.providers.luma.provider import LumaProvider
 from pulumi_events.server import mcp
@@ -21,6 +22,19 @@ from pulumi_events.utils import download_image_to_temp
 __all__: list[str] = []
 
 logger = logging.getLogger(__name__)
+
+
+class GuestInvite(BaseModel):
+    """A person to invite to a Luma event."""
+
+    email: str = Field(description="Email address of the person to invite.")
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Display name for the guest. Ignored if the person already has a "
+            "name on their Luma account."
+        ),
+    )
 
 
 def _sanitize_geo_address(geo: dict[str, Any]) -> dict[str, Any]:
@@ -420,32 +434,34 @@ async def luma_list_guests(
 @handle_provider_errors
 async def luma_send_invites(
     event_id: str,
-    emails: list[str],
+    guests: list[GuestInvite],
     ctx: Context,
     message: str | None = None,
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """Send Luma invite emails to people for an event.
 
-    Each address receives an invitation to the event. People who are not
+    Each guest receives an invitation to the event. People who are not
     already on the guest list are added and invited.
 
     Args:
         event_id: The Luma event API ID (evt-...).
-        emails: Email addresses to invite (at least one).
-        message: Optional note included in every invite (max 200 characters).
+        guests: People to invite (at least one), each with an ``email`` and an
+            optional ``name``.
+        message: Optional note included in the invites (max 200 characters).
+            Applies to the whole batch, not to individual guests.
     """
-    if not emails:
-        raise ToolError("Provide at least one email address to invite.")
+    if not guests:
+        raise ToolError("Provide at least one guest to invite.")
     if message is not None and len(message) > 200:
         raise ToolError("message must be 200 characters or fewer.")
 
-    guests: list[dict[str, Any]] = []
-    for email in emails:
-        guest: dict[str, Any] = {"email": email}
-        if message is not None:
-            guest["message"] = message
-        guests.append(guest)
+    payload = [g.model_dump(exclude_none=True) for g in guests]
 
-    await ctx.info(f"Sending {len(guests)} Luma invite(s) for event {event_id}...")
-    return await provider.send_invites(event_id, guests)
+    await ctx.info(f"Sending {len(payload)} Luma invite(s) for event {event_id}...")
+    await provider.send_invites(event_id, payload, message=message)
+    return {
+        "event_id": event_id,
+        "invited": len(payload),
+        "emails": [g["email"] for g in payload],
+    }
