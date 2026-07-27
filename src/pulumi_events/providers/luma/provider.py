@@ -240,14 +240,16 @@ class LumaProvider:
         self,
         event_id: str,
         guests: list[dict[str, Any]],
+        message: str | None = None,
     ) -> dict[str, Any]:
         """Send invite emails to guests of an event.
 
         Each guest dict must contain an ``email`` and may include an optional
-        ``message`` (max 200 chars). People who are not yet guests are added
-        and invited.
+        ``name``.  *message* is a single note applied to the whole batch (max
+        200 chars), not a per-guest field.  People who are not yet guests are
+        added and invited.
         """
-        return await self._client.post(
-            "/events/guests/send-invites",
-            {"event_id": event_id, "guests": guests},
-        )
+        body: dict[str, Any] = {"event_id": event_id, "guests": guests}
+        if message is not None:
+            body["message"] = message
+        return await self._client.post("/events/guests/send-invites", body)
