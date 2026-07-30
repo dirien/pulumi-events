@@ -179,6 +179,13 @@ mcp = FastMCP(
         "Use meetup_login to authenticate with Meetup. "
         "Luma uses an API key (pre-configured). "
         "Tools prefixed with meetup_ or luma_ target each platform. "
+        "Invite-only Luma events are fully creatable end-to-end: "
+        "luma_create_event/luma_update_event support require_approval "
+        "(request-to-join), max_capacity, waitlist_status, "
+        "registration_questions, visibility (public/members-only/private), "
+        "and more; manage co-hosts with luma_add_host/luma_update_host/"
+        "luma_remove_host and inspect approval state with "
+        "luma_list_ticket_types. "
         "Resources: meetup://self, meetup://group/{urlname}, "
         "luma://self, luma://event/{event_id}, etc."
     ),
@@ -199,9 +206,11 @@ mcp = FastMCP(
             call_tool_settings={
                 "enabled": True,
                 "ttl": 300,
+                # luma_get_event is deliberately NOT cached: tools and clients
+                # fetch it right after mutations to verify changes, and a
+                # 5-minute-stale hit would report pre-update state.
                 "included_tools": [
                     "luma_list_events",
-                    "luma_get_event",
                     "luma_list_people",
                     "luma_list_guests",
                     "meetup_get_event",

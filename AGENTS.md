@@ -7,7 +7,7 @@
 
 ## Overview
 
-MCP server for managing events on **Meetup.com** and **Luma** via AI assistants. Built with FastMCP 3.x (Python ≥3.12). Exposes 23 tools + 6 resources over streamable-http transport. Provider architecture: each platform implements `EventProvider` Protocol.
+MCP server for managing events on **Meetup.com** and **Luma** via AI assistants. Built with FastMCP 3.x (Python ≥3.12). Exposes 27 tools + 6 resources over streamable-http transport. Provider architecture: each platform implements `EventProvider` Protocol.
 
 ## Setup
 
