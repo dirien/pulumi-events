@@ -130,19 +130,26 @@ class LumaProvider:
 
     async def get_event(self, event_id: str) -> dict[str, Any]:
         data = await self._client.get("/event/get", {"api_id": event_id})
-        return data.get("event", data)
+        event = data.get("event", data)
+        # The API returns hosts as a sibling of the event object; merge them in
+        # so callers see the full picture (only hosts with is_visible=true are
+        # included by Luma).
+        hosts = data.get("hosts")
+        if isinstance(event, dict) and hosts is not None and "hosts" not in event:
+            event = {**event, "hosts": hosts}
+        return event
 
     async def upload_image(self, file_path: Path) -> str:
         """Upload a local image to Luma CDN. Returns the CDN URL."""
         return await self._client.upload_image(file_path)
 
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
-        data = await self._client.post("/event/create", kwargs)
+        data = await self._client.post("/events/create", kwargs)
         return data.get("event", data)
 
     async def update_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]:
-        kwargs["event_api_id"] = event_id
-        data = await self._client.post("/event/update", kwargs)
+        kwargs["event_id"] = event_id
+        data = await self._client.post("/events/update", kwargs)
         return data.get("event", data)
 
     async def cancel_event(self, event_id: str) -> dict[str, Any]:
@@ -163,6 +170,93 @@ class LumaProvider:
                 "event_id": event_id,
                 "cancellation_token": cancellation_token,
             },
+        )
+
+    # ------------------------------------------------------------------
+    # Ticket types (carry the require_approval flag)
+    # ------------------------------------------------------------------
+
+    async def list_ticket_types(self, event_id: str) -> list[dict[str, Any]]:
+        """List all ticket types for an event."""
+        data = await self._client.get("/events/ticket-types/list", {"event_id": event_id})
+        return data.get("entries", [])
+
+    async def update_ticket_type(self, ticket_type_id: str, **kwargs: Any) -> dict[str, Any]:
+        """Update a ticket type (ttype-...). Returns the updated ticket type."""
+        kwargs["event_ticket_type_id"] = ticket_type_id
+        return await self._client.post("/events/ticket-types/update", kwargs)
+
+    async def set_require_approval(
+        self, event_id: str, require_approval: bool
+    ) -> list[dict[str, Any]]:
+        """Set require_approval on every ticket type of an event.
+
+        Luma has no event-level require_approval setting — the flag lives on
+        ticket types, and the event's ``require_approval`` field is derived
+        ("true if any currently available ticket has approval turned on") and
+        refreshed asynchronously, so GET may lag a few seconds behind.
+
+        Returns compact summaries of all ticket types after the change.
+        """
+        entries = await self.list_ticket_types(event_id)
+        results: list[dict[str, Any]] = []
+        for entry in entries:
+            if entry.get("require_approval") != require_approval:
+                entry = await self.update_ticket_type(
+                    entry["id"], require_approval=require_approval
+                )
+            results.append(
+                {
+                    "id": entry.get("id"),
+                    "name": entry.get("name"),
+                    "require_approval": entry.get("require_approval"),
+                }
+            )
+        return results
+
+    # ------------------------------------------------------------------
+    # Hosts
+    # ------------------------------------------------------------------
+
+    async def add_host(
+        self,
+        event_id: str,
+        email: str,
+        *,
+        name: str | None = None,
+        access_level: str | None = None,
+        is_visible: bool | None = None,
+    ) -> dict[str, Any]:
+        """Add a host to an event (creates a placeholder profile for new emails)."""
+        body: dict[str, Any] = {"event_id": event_id, "email": email}
+        if name is not None:
+            body["name"] = name
+        if access_level is not None:
+            body["access_level"] = access_level
+        if is_visible is not None:
+            body["is_visible"] = is_visible
+        return await self._client.post("/events/hosts/add", body)
+
+    async def update_host(
+        self,
+        event_id: str,
+        email: str,
+        *,
+        access_level: str | None = None,
+        is_visible: bool | None = None,
+    ) -> dict[str, Any]:
+        """Change a host's access level and/or visibility."""
+        body: dict[str, Any] = {"event_id": event_id, "email": email}
+        if access_level is not None:
+            body["access_level"] = access_level
+        if is_visible is not None:
+            body["is_visible"] = is_visible
+        return await self._client.post("/events/hosts/update", body)
+
+    async def remove_host(self, event_id: str, email: str) -> dict[str, Any]:
+        """Remove a host from an event (the creator cannot be removed)."""
+        return await self._client.post(
+            "/events/hosts/remove", {"event_id": event_id, "email": email}
         )
 
     # ------------------------------------------------------------------

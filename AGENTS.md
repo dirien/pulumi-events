@@ -7,7 +7,7 @@
 
 ## Overview
 
-MCP server for managing events on **Meetup.com** and **Luma** via AI assistants. Built with FastMCP 3.x (Python ≥3.12). Exposes 23 tools + 6 resources over streamable-http transport. Provider architecture: each platform implements `EventProvider` Protocol.
+MCP server for managing events on **Meetup.com** and **Luma** via AI assistants. Built with FastMCP 3.x (Python ≥3.12). Exposes 27 tools + 6 resources over streamable-http transport. Provider architecture: each platform implements `EventProvider` Protocol.
 
 ## Setup
 
@@ -160,6 +160,8 @@ Then import in `server.py` at the bottom with the other tool imports.
 - **All event logic in MCP tools** — no ad-hoc scripts
 - **Meetup Pro network** — single-call create+publish, filter with `groupIds`, use `gql2` endpoint
 - **Middleware** — error handling → retry → response caching in `server.py`
+- **Luma require_approval lives on ticket types** — no event-level field (create/update strip it); tools set it via `set_require_approval()` on all ticket types. The event-level flag and `spots_remaining` in GET are derived and refresh asynchronously — see README "Invite-Only Events" for all per-field quirks (write-only fields, visible-hosts-only, question `id` required)
+- **`luma_get_event` is never response-cached** — create/update/host tools fetch the event back to verify mutations; a cached read would return pre-mutation state
 
 ## Checklist
 

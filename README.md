@@ -14,7 +14,8 @@ Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API
 
 ## Features
 
-- **23 tools** across two platforms (Meetup + Luma), tagged by platform and domain
+- **27 tools** across two platforms (Meetup + Luma), tagged by platform and domain
+- **Invite-only Luma events end-to-end** — require-approval, capacity + waitlist, registration questions, host management, and members-only visibility, all without touching the Luma UI
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
 - **Cover image upload** — pass a local file path when creating/updating events; the server handles CDN upload automatically (Luma presigned URL, Meetup two-step photo upload)
 - Auto-pagination on all list tools — single tool call returns all results
@@ -32,7 +33,7 @@ The server uses FastMCP's middleware stack for reliability and observability:
 |---|---|
 | `ErrorHandlingMiddleware` | Converts raw exceptions to proper MCP error codes, logs errors consistently |
 | `RetryMiddleware` | Automatic retry with exponential backoff on transient network failures (`ConnectionError`, `TimeoutError`) |
-| `ResponseCachingMiddleware` | 5-minute TTL cache on read-only tools (list, search, get) — mutations are never cached |
+| `ResponseCachingMiddleware` | 5-minute TTL cache on read-only tools (list, search, get) — mutations are never cached; `luma_get_event` is also excluded so verify-after-update reads are never stale |
 
 ### Tool Metadata
 
@@ -118,10 +119,14 @@ Then point Claude Code at `http://127.0.0.1:8080/mcp`.
 | Tool | Tags | Description |
 |------|------|-------------|
 | `luma_list_events` | `luma`, `events` | List events from your Luma calendar |
-| `luma_get_event` | `luma`, `events` | Get full details of a Luma event by API ID |
-| `luma_create_event` | `luma`, `events` | Create a Luma event. Supports `cover_image_path` for cover image upload and `tint_color` for page theming |
-| `luma_update_event` | `luma`, `events` | Update a Luma event. Supports `cover_image_path` for cover image upload and `tint_color` for page theming |
+| `luma_get_event` | `luma`, `events` | Get full details of a Luma event by API ID, including visible hosts, registration questions, and require-approval state |
+| `luma_create_event` | `luma`, `events` | Create a Luma event — including invite-only ones: `require_approval`, `max_capacity`, `waitlist_status`, `registration_questions`, `visibility` (public/members-only/private), plus cover image upload and `tint_color` |
+| `luma_update_event` | `luma`, `events` | Update a Luma event. Same field set as create, plus `suppress_notifications` |
 | `luma_cancel_event` | `luma`, `events` | Cancel a Luma event |
+| `luma_list_ticket_types` | `luma`, `events` | List an event's ticket types with their `require_approval` flags (authoritative, no lag) |
+| `luma_add_host` | `luma`, `hosts` | Add a host/co-host by email with `access_level` (manager/check-in/none) and visibility |
+| `luma_update_host` | `luma`, `hosts` | Change a host's access level or visibility |
+| `luma_remove_host` | `luma`, `hosts` | Remove a host (the event creator cannot be removed) |
 | `luma_list_people` | `luma`, `people` | List all people from your Luma calendar |
 | `luma_list_guests` | `luma`, `guests` | List guests for a Luma event |
 | `luma_send_invites` | `luma`, `guests` | Send invite emails for a Luma event to an array of guests (`email` + optional `name`) |
@@ -160,6 +165,44 @@ per-guest field. People who are not yet on the guest list are added and invited.
 Pass `tint_color` (a hex string, e.g. `"#bb2dc7"`) to `luma_create_event` or `luma_update_event` to set the event page theme color. Luma derives contrast-adjusted shades from it; alpha channels are stripped automatically. There is no API field for custom background images — only `cover_url` and `tint_color`.
 
 New events default to `#2f2356` when `tint_color` is omitted. Configure via `PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR` (empty string disables the default); the cloud deployment reads it from the `marketing/pulumi-events` ESC environment (`pulumi-events-infra:lumaDefaultTintColor`). Updates never apply the default — an existing color is only changed when `tint_color` is passed explicitly.
+
+### Invite-Only Events (Luma)
+
+A single `luma_create_event` call (plus `luma_add_host` per co-host) produces a fully
+configured invite-only event — private visibility, request-to-join approval, capacity
+with waitlist, and a custom registration form — with no Luma UI steps:
+
+```json
+{
+  "name": "Engineering Leadership Dinner",
+  "start_at": "2026-09-10T17:00:00Z",
+  "end_at": "2026-09-10T20:00:00Z",
+  "timezone": "Europe/Berlin",
+  "visibility": "private",
+  "require_approval": true,
+  "max_capacity": 12,
+  "waitlist_status": "enabled",
+  "registration_questions": [
+    { "label": "Tell us more about you.", "required": true, "question_type": "text" }
+  ],
+  "cover_image_url": "https://example.com/cover.png"
+}
+```
+
+The tool response is the event fetched back from the API, so most settings are verifiable
+in one round trip. Field-level behavior of Luma's public API (verified empirically):
+
+| Field | Behavior |
+|---|---|
+| `require_approval` | Not an event field — Luma stores it **per ticket type**. The server sets it on all of the event's ticket types (new events have one free "Standard" type) and returns the applied state as `ticket_types` in the response. The event-level `require_approval` in GET responses is derived and refreshed asynchronously (may read `false` for a few seconds); `luma_list_ticket_types` is always current. |
+| `max_capacity` | Write-only: GET returns `max_capacity: null` even when set. Verify via `spots_remaining` (also refreshed asynchronously). Pass `0` on update to remove the limit. |
+| `waitlist_status` | `enabled`/`disabled`; round-trips in GET. Only meaningful with a capacity. |
+| `registration_questions` | Round-trip in GET. Luma **requires an `id` per question** — the server auto-generates one from the label when omitted. Updates **replace the whole set**; resend existing questions with their IDs to keep them. Types: `text`, `long-text`, `dropdown`/`multi-select` (+`options`), `url`, `phone-number`, `company`, `agree-check`, and social handles. Luma's rich-text `terms` type is not supported. |
+| `visibility` | `public`, `members-only`, or `private`; round-trips in GET. |
+| Hosts | `luma_add_host` creates a placeholder profile for emails without a Luma account (using `name`). GET only returns **visible** hosts — a host with `is_visible: false` exists but never appears in API responses, and `access_level` is write-only. The event creator cannot be removed or downgraded. |
+| `show_guest_list`, `name_requirement`, `phone_number_requirement` | Accepted and applied, but **write-only** — GET always returns `null`, so they cannot be verified via the API. |
+| `location_visibility` | `public` or `guests-only` (hide exact address from unapproved guests); round-trips in GET. |
+| `slug` | Custom URL (`https://luma.com/<slug>`, 3–50 chars, unique across all of Luma); verify via the `url` field in GET. |
 
 ### Cross-Platform: Meetup to Luma
 
