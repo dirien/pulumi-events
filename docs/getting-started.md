@@ -229,6 +229,13 @@ Set the theme color of luma event evt-abc123 to #bb2dc7
 List guests for luma event evt-abc123
 Invite ada@example.com (Ada Lovelace) and alan@example.com to luma event evt-abc123
 List all people in my Luma calendar
+
+# Luma — invite-only events
+Create a private Luma dinner capped at 12 seats with waitlist, approval required, and a required "Tell us more about you." question
+Add jane@example.com as a co-host to luma event evt-abc123
+Make the venue address visible only to approved guests on luma event evt-abc123
+Show the ticket types of luma event evt-abc123 to check the approval flag
+Remove the co-host jane@example.com from luma event evt-abc123
 ```
 
 ### Image Upload
@@ -245,6 +252,10 @@ Supported formats: JPEG, PNG, GIF, WebP, SVG, AVIF.
 `luma_create_event` and `luma_update_event` accept `tint_color` — a hex color string (e.g. `#bb2dc7`) that sets the event page theme. Luma derives contrast-adjusted shades from it; alpha channels are stripped automatically.
 
 When `tint_color` is omitted on create, the server applies the configured default (`PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR`, ships as `#2f2356`; set it to an empty string to disable). Updates never apply the default. In the cloud deployment the value comes from the `marketing/pulumi-events` ESC environment key `pulumi-events-infra:lumaDefaultTintColor`.
+
+### Invite-Only Events (Luma)
+
+`luma_create_event` / `luma_update_event` cover the full invite-only setup — `require_approval`, `max_capacity`, `waitlist_status`, `registration_questions`, `visibility` (`public` / `members-only` / `private`) — and `luma_add_host` / `luma_update_host` / `luma_remove_host` manage co-hosts. See the [README's Invite-Only Events section](../README.md#invite-only-events-luma) for the per-field API behavior (write-only fields, derived-field lag, host visibility rules).
 
 ### Cross-Platform Events
 
