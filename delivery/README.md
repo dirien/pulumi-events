@@ -37,7 +37,7 @@ No Docker daemon is needed on the runner. `deploy/__main__.py` builds the contai
 ## Bootstrap (one time)
 
 1. Need a Pulumi Cloud org and Pulumi CLI >= 3.277.0. Install the GitHub integration in Pulumi Cloud and grant it
-   `dirien/pulumi-events`.
+   `pulumi/pulumi-events`.
 2. The target stack must already exist (Delivery does not create stacks):
    `cd deploy && pulumi stack init <org>/dev` (if not done), with its ESC imports in `Pulumi.dev.yaml`.
 3. Make sure the ESC environment `marketing/aws-auth` yields AWS credentials for a role that can also manage

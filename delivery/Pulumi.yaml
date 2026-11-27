@@ -13,7 +13,7 @@ config:
     default: dev
   githubRepository:
     type: string
-    default: dirien/pulumi-events
+    default: pulumi/pulumi-events
     description: owner/name of the GitHub repo (Pulumi GitHub integration must have access)
   branch:
     type: string

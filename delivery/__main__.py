@@ -18,7 +18,7 @@ import pulumi_delivery as delivery
 config = pulumi.Config()
 project = config.get("targetProject") or "pulumi-events-infra"
 stack = config.get("targetStack") or "dev"
-repository = config.get("githubRepository") or "dirien/pulumi-events"
+repository = config.get("githubRepository") or "pulumi/pulumi-events"
 branch = config.get("branch") or "main"
 infra_dir = config.get("infraDir") or "deploy"
 

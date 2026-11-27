@@ -1,4 +1,4 @@
 config:
   delivery:source:
     directory: delivery
-    url: https://github.com/dirien/pulumi-events
+    url: https://github.com/pulumi/pulumi-events
