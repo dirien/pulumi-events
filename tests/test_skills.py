@@ -7,7 +7,7 @@ from fastmcp import Client
 
 from pulumi_events.server import SKILLS_DIR, mcp
 
-EXPECTED_TOOL_COUNT = 23
+EXPECTED_TOOL_COUNT = 27
 EXPECTED_SKILLS = {"create-edit-events", "luma-send-invites", "meetup-network-search"}
 
 

@@ -275,7 +275,9 @@ infrastructure = aws.imagebuilder.InfrastructureConfiguration(
     "image-infra",
     name=f"{pulumi.get_project()}-{pulumi.get_stack()}",
     instance_profile_name=build_profile.name,
-    instance_types=["t3.large"],
+    # Graviton: the ECS task runs on ARM64, and Image Builder builds for the
+    # build instance's architecture, so the instance must be arm64 too.
+    instance_types=["t4g.large"],
     subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),
     security_group_ids=[build_sg.id],
     terminate_instance_on_failure=True,
@@ -631,6 +633,11 @@ task_definition = aws.ecs.TaskDefinition(
         memory=str(container_memory),
         network_mode="awsvpc",
         requires_compatibilities=["FARGATE"],
+        # Graviton: the image is built for arm64, so the task must run on it too.
+        runtime_platform=aws.ecs.TaskDefinitionRuntimePlatformArgs(
+            cpu_architecture="ARM64",
+            operating_system_family="LINUX",
+        ),
         execution_role_arn=execution_role.arn,
         task_role_arn=task_role.arn,
         container_definitions=pulumi.Output.all(

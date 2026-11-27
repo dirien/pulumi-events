@@ -75,7 +75,7 @@ async def meetup_network_search(
     roles: list[str] | None = None,
     events_attended_min: int | None = None,
     sort: str | None = None,
-    desc: bool = True,  # noqa: FBT001, FBT002  # MCP tool parameter; signature must not change
+    desc: bool = True,
     first: int = 20,
     after: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),

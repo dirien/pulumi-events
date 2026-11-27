@@ -271,7 +271,7 @@ wheels = [
 
 [[package]]
 name = "pulumi"
-version = "3.228.0"
+version = "3.278.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "debugpy" },
@@ -285,28 +285,29 @@ dependencies = [
     { name = "protobuf" },
     { name = "pyyaml" },
     { name = "semver" },
+    { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fb/df/bba200a76262b76ba1fd21cd86703e155a7859d5b029e12335ecec3db285/pulumi-3.228.0-py3-none-any.whl", hash = "sha256:376d89d2dced1ce088f4f6bb2188683b4f6208aaab68411aa221c54ef5b6cdea", size = 392976, upload-time = "2026-03-25T09:18:00.817Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/8e/e448f1637e86d79b6ad005666b1558c6f143fcff8d6e5bea41913dabe076/pulumi-3.278.0-py3-none-any.whl", hash = "sha256:e2622217b4783a877121118222d2ffc3791bbcb683a2614f16406c73f8a2b9e0", size = 470171, upload-time = "2026-11-25T12:40:26.943Z" },
 ]
 
 [[package]]
 name = "pulumi-aws"
-version = "7.24.0"
+version = "7.55.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "parver" },
+    { name = "packaging" },
     { name = "pulumi" },
     { name = "semver" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/7e/e91c67a9ac3803a21573dd39a6086c478114bcde860311610fe6f83fbd17/pulumi_aws-7.24.0.tar.gz", hash = "sha256:b14845418783aaac1b64517f75394690184cd74d9ce9efe45103a81e06205eb6", size = 9384869, upload-time = "2026-03-31T20:02:22.352Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/29/1877f8fce060f71e21835d272ccd48fe387c40151845ec500df7e7639299/pulumi_aws-7.55.0.tar.gz", hash = "sha256:d283e65b0557cf23293b6868b7d5c4d9cf17b0cbccaae2d4917b040e5f061b10", size = 10236140, upload-time = "2026-11-13T13:03:25.41Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/98/fe/1a1fd24c1a5637ffe4674586c4b3a39c868f162f00bc1fdb3319ff001663/pulumi_aws-7.24.0-py3-none-any.whl", hash = "sha256:52200dc80f5d2fe63aed277b670f40ae92980a013de052d1edd3bfb84096c048", size = 12463310, upload-time = "2026-03-31T20:02:19.287Z" },
+    { url = "https://files.pythonhosted.org/packages/00/aa/5b81315c11a7173ccbd8a034a2ec6d6d259466d179681c59b1f70f45fcc0/pulumi_aws-7.55.0-py3-none-any.whl", hash = "sha256:db27534aef7e432df22e14226860b20496cb5aacd51baf2387aa1804e624e490", size = 13483395, upload-time = "2026-11-13T13:03:22.461Z" },
 ]
 
 [[package]]
 name = "pulumi-awsx"
-version = "3.3.1"
+version = "3.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "parver" },
@@ -316,9 +317,9 @@ dependencies = [
     { name = "pulumi-docker-build" },
     { name = "semver" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/69/8a/a0141f52edb6863b8ba5d4ea4e7e4104cb09dbc69ff453b00338498f845c/pulumi_awsx-3.3.1.tar.gz", hash = "sha256:712ee285cccaafdb5de3500deaebd759f0973280400fbf79713b788989a5d25f", size = 144202, upload-time = "2026-03-26T14:28:35.787Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/70/9942d98e9dc96bb1726c60822230274cf1e01750c5df729269831fbeadd8/pulumi_awsx-3.15.0.tar.gz", hash = "sha256:ebd064e0663cffa6dbf2004337f05dfcedccbad4e72c3199f8be14c852e211ce", size = 161390, upload-time = "2026-11-20T19:52:28.196Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/5c/9f568c346e7e938b588a90efb1835e987c2245b3d8ebf638140e0deecdf4/pulumi_awsx-3.3.1-py3-none-any.whl", hash = "sha256:df413d1f3a2cb79394daf73ef776bc18eb1e6a4f87248872da2b15f3ddff72f4", size = 161023, upload-time = "2026-03-26T14:28:34.427Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/9f/156f4951f9bfce667cc28fa626980545ddd96e5d8c66e948515dca45edd9/pulumi_awsx-3.15.0-py3-none-any.whl", hash = "sha256:28e0982f0fb45098bee6c9c2630b9ee9185f178f92565c88e9694d8034cfd8b1", size = 183647, upload-time = "2026-11-20T19:52:26.785Z" },
 ]
 
 [[package]]
@@ -361,9 +362,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pulumi", specifier = ">=3.228.0" },
-    { name = "pulumi-aws", specifier = ">=7.24.0" },
-    { name = "pulumi-awsx", specifier = ">=3.3.1" },
+    { name = "pulumi", specifier = ">=3.256.0" },
+    { name = "pulumi-aws", specifier = ">=7.41.0" },
+    { name = "pulumi-awsx", specifier = ">=3.8.0" },
 ]
 
 [[package]]

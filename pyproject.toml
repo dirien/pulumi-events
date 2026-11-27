@@ -9,7 +9,7 @@ dependencies = [
     "fastmcp>=4.2.6,<5",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.2",
+    "pydantic-settings>=2.15.0",
     "tzdata>=2025.2",
 ]
 
@@ -57,6 +57,8 @@ runtime-evaluated-decorators = [
     "D417",    # docstrings are LLM-visible tool descriptions; injected deps (ctx, provider) are not tool args
     "PLR0913", # tool signatures are the public MCP API and must not change
     "PLR0917", # tool signatures are the public MCP API and must not change
+    "FBT001",  # MCP clients always pass tool arguments by name, never positionally
+    "FBT002",  # MCP clients always pass tool arguments by name, never positionally
 ]
 "tests/*" = [
     "S101",    # use of assert is expected in pytest
@@ -73,7 +75,7 @@ runtime-evaluated-decorators = [
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    "ruff>=0.16.0",
+    "ruff>=0.16.2",
 ]
 
 [tool.pytest.ini_options]

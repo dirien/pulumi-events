@@ -5,10 +5,10 @@ description: Invite people to a Luma event by email with luma_send_invites, opti
 
 # Send Luma invites
 
-## Tool: `luma_send_invites(event_id, emails, message=None)`
+## Tool: `luma_send_invites(event_id, guests, message=None)`
 
 - `event_id`: Luma API ID (`evt-...`).
-- `emails`: at least one address. An empty list is rejected.
+- `guests`: at least one entry, each `{"email": ..., "name": ...}` with `name` optional. An empty list is rejected.
 - `message`: optional note added to every invite, at most 200 characters. Longer values are rejected.
 - People who are not on the guest list are added and invited.
 
@@ -20,7 +20,7 @@ The tool sends real emails and is not idempotent. Do not call it twice for the s
 2. Build the recipient list.
    - From the user: use the addresses given.
    - From the calendar: `luma_list_people` returns contacts with name, email, attendance count and tags. Filter locally.
-3. Remove people already invited: `luma_list_guests(event_id)` and drop matching emails.
+3. Remove people already invited: `luma_list_guests(event_id)` and drop guests whose email matches.
 4. Show the user the final list, the event name and time, and the message. Wait for a yes.
 5. Call `luma_send_invites`.
 6. Report how many invites were sent. Check the result before claiming success.
