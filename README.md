@@ -83,7 +83,7 @@ Google OAuth handles interactive MCP auth. Meetup authenticates automatically vi
 
 ```bash
 # Prerequisites: Python 3.12+, uv, Pulumi CLI (logged in)
-git clone https://github.com/dirien/pulumi-events.git
+git clone https://github.com/pulumi/pulumi-events.git
 cd pulumi-events
 uv sync
 
