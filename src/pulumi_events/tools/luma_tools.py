@@ -22,6 +22,8 @@ __all__: list[str] = []
 
 logger = logging.getLogger(__name__)
 
+_MAX_INVITE_MESSAGE_LENGTH = 200
+
 
 def _sanitize_geo_address(geo: dict[str, Any]) -> dict[str, Any]:
     """Strip fields from geo_address_json that Luma rejects.
@@ -79,6 +81,7 @@ async def luma_list_events(
 
     Args:
         limit: Maximum total number of events to return.
+
     """
     await ctx.info("Fetching Luma events...")
     return await provider.list_all_events(limit=limit)
@@ -101,6 +104,7 @@ async def luma_get_event(
 
     Args:
         event_id: The Luma event API ID (evt-...).
+
     """
     await ctx.info(f"Fetching Luma event {event_id}...")
     return await provider.get_event(event_id)
@@ -122,7 +126,7 @@ async def luma_get_event(
     },
 )
 @handle_provider_errors
-async def luma_create_event(
+async def luma_create_event(  # noqa: C901, PLR0912  # flat optional-field mapping; signature is the MCP API
     name: str,
     start_at: str,
     end_at: str,
@@ -177,9 +181,11 @@ async def luma_create_event(
             alpha channels are stripped automatically. When omitted, the
             server-configured default (PULUMI_EVENTS_LUMA_DEFAULT_TINT_COLOR)
             is applied.
+
     """
     if cover_image_path is not None and cover_image_url is not None:
-        raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
+        msg = "Provide either cover_image_path or cover_image_url, not both."
+        raise ToolError(msg)
 
     input_data: dict[str, Any] = {
         "name": name,
@@ -213,7 +219,8 @@ async def luma_create_event(
                 try:
                     temp_image = await download_image_to_temp(cover_image_url)
                 except (ValueError, httpx.HTTPError) as exc:
-                    raise ToolError(f"Failed to download cover_image_url: {exc}") from exc
+                    msg = f"Failed to download cover_image_url: {exc}"
+                    raise ToolError(msg) from exc
                 image_path = temp_image
             else:
                 assert cover_image_path is not None  # noqa: S101 — narrowed by image_requested
@@ -241,7 +248,7 @@ async def luma_create_event(
     annotations={"idempotentHint": True},
 )
 @handle_provider_errors
-async def luma_update_event(
+async def luma_update_event(  # noqa: C901, PLR0912, PLR0915  # flat optional-field mapping; signature is the MCP API
     event_id: str,
     ctx: Context,
     name: str | None = None,
@@ -291,9 +298,11 @@ async def luma_update_event(
             (e.g. "#bb2dc7"). Luma derives the page theme from it;
             alpha channels are stripped automatically. Unlike create, no
             default is applied — the color only changes when provided.
+
     """
     if cover_image_path is not None and cover_image_url is not None:
-        raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
+        msg = "Provide either cover_image_path or cover_image_url, not both."
+        raise ToolError(msg)
 
     kwargs: dict[str, Any] = {}
     if name is not None:
@@ -329,7 +338,8 @@ async def luma_update_event(
                 try:
                     temp_image = await download_image_to_temp(cover_image_url)
                 except (ValueError, httpx.HTTPError) as exc:
-                    raise ToolError(f"Failed to download cover_image_url: {exc}") from exc
+                    msg = f"Failed to download cover_image_url: {exc}"
+                    raise ToolError(msg) from exc
                 image_path = temp_image
             else:
                 assert cover_image_path is not None  # noqa: S101 — narrowed by image_requested
@@ -364,6 +374,7 @@ async def luma_cancel_event(
 
     Args:
         event_id: The Luma event API ID (evt-...).
+
     """
     await ctx.info(f"Cancelling Luma event {event_id}...")
     return await provider.cancel_event(event_id)
@@ -386,6 +397,7 @@ async def luma_list_people(
 
     Args:
         limit: Maximum total number of people to return.
+
     """
     await ctx.info("Fetching Luma people...")
     return await provider.list_all_people(limit=limit)
@@ -408,6 +420,7 @@ async def luma_list_guests(
     Args:
         event_id: The Luma event API ID (evt-...).
         limit: Maximum total number of guests to return.
+
     """
     await ctx.info(f"Fetching guests for Luma event {event_id}...")
     return await provider.list_all_guests(event_id, limit=limit)
@@ -434,11 +447,14 @@ async def luma_send_invites(
         event_id: The Luma event API ID (evt-...).
         emails: Email addresses to invite (at least one).
         message: Optional note included in every invite (max 200 characters).
+
     """
     if not emails:
-        raise ToolError("Provide at least one email address to invite.")
-    if message is not None and len(message) > 200:
-        raise ToolError("message must be 200 characters or fewer.")
+        msg = "Provide at least one email address to invite."
+        raise ToolError(msg)
+    if message is not None and len(message) > _MAX_INVITE_MESSAGE_LENGTH:
+        msg = "message must be 200 characters or fewer."
+        raise ToolError(msg)
 
     guests: list[dict[str, Any]] = []
     for email in emails:

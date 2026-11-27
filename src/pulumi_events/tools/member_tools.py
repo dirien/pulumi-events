@@ -35,6 +35,7 @@ async def meetup_list_group_members(
         group_urlname: URL name of the group (e.g. berlin-pulumi-user-group).
         status: Filter by membership status (ACTIVE, BLOCKED, PENDING).
         limit: Maximum total number of members to return.
+
     """
     await ctx.info(f"Fetching members of '{group_urlname}'...")
     return await provider.list_all_group_members(group_urlname, status=status, limit=limit)
@@ -59,6 +60,7 @@ async def meetup_get_member(
     Args:
         group_urlname: URL name of the group.
         member_id: The Meetup member ID.
+
     """
     await ctx.info(f"Fetching member {member_id} in '{group_urlname}'...")
     return await provider.get_group_member(group_urlname, member_id)
@@ -85,6 +87,7 @@ async def meetup_find_member(
 
     Args:
         member_id: The Meetup member ID to search for.
+
     """
     await ctx.info(f"Searching for member {member_id} across all your groups...")
     try:

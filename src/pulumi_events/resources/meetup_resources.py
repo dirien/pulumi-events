@@ -18,7 +18,7 @@ __all__: list[str] = []
 async def meetup_self(
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> str:
-    """Authenticated Meetup user profile (id, name, group count)."""
+    """Authenticated Meetup user profile (id, name, group count)."""  # noqa: D401  # text is the MCP resource description
     try:
         data = await provider.get_self()
         return json.dumps(data, indent=2)

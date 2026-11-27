@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Sequence
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pulumi_events.exceptions import MeetupGraphQLError, ProviderError
 from pulumi_events.providers.base import ProviderCapability
 from pulumi_events.providers.meetup import queries
-from pulumi_events.providers.meetup.client import MeetupGraphQLClient
 from pulumi_events.utils import guess_image_content_type
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+    from pathlib import Path
+
+    from pulumi_events.providers.meetup.client import MeetupGraphQLClient
 
 __all__ = ["MeetupProvider"]
 
@@ -27,6 +30,7 @@ class MeetupProvider:
     """Meetup.com adapter implementing the EventProvider protocol."""
 
     def __init__(self, client: MeetupGraphQLClient) -> None:
+        """Initialise the instance."""
         self._client = client
 
     # ------------------------------------------------------------------
@@ -35,10 +39,12 @@ class MeetupProvider:
 
     @property
     def name(self) -> str:
+        """Return the provider name."""
         return "meetup"
 
     @property
     def capabilities(self) -> set[ProviderCapability]:
+        """Return the capabilities this provider supports."""
         return {
             ProviderCapability.SEARCH_EVENTS,
             ProviderCapability.SEARCH_GROUPS,
@@ -58,6 +64,7 @@ class MeetupProvider:
 
     @property
     def is_authenticated(self) -> bool:
+        """Return whether credentials are configured."""
         return self._client.is_authenticated
 
     # ------------------------------------------------------------------
@@ -73,7 +80,7 @@ class MeetupProvider:
         limit: int | None = None,
         max_pages: int = DEFAULT_MAX_PAGES,
     ) -> list[dict[str, Any]]:
-        """Generic relay-style pagination.
+        """Paginate a relay-style connection.
 
         Parameters
         ----------
@@ -89,6 +96,7 @@ class MeetupProvider:
             Optional maximum number of edges to return.
         max_pages:
             Safety cap on the number of pages to fetch.
+
         """
         all_edges: list[dict[str, Any]] = []
         cursor: str | None = None
@@ -104,8 +112,10 @@ class MeetupProvider:
                     # Common case: groupByUrlname returns null for unknown groups
                     if key == "groupByUrlname":
                         urlname = variables.get("urlname", "unknown")
-                        raise ProviderError(f"Group '{urlname}' not found on Meetup")
-                    raise ProviderError(f"Unexpected null at '{key}' in API response")
+                        msg = f"Group '{urlname}' not found on Meetup"
+                        raise ProviderError(msg)
+                    msg = f"Unexpected null at '{key}' in API response"
+                    raise ProviderError(msg)
 
             edges = connection.get("edges", [])
             all_edges.extend(edges)
@@ -129,6 +139,7 @@ class MeetupProvider:
     # ------------------------------------------------------------------
 
     async def get_self(self) -> dict[str, Any]:
+        """Return the authenticated user profile."""
         data = await self._client.execute(queries.SELF_QUERY)
         return data["self"]
 
@@ -137,17 +148,21 @@ class MeetupProvider:
     # ------------------------------------------------------------------
 
     async def get_group(self, urlname: str) -> dict[str, Any]:
+        """Return a group by URL name."""
         data = await self._client.execute(queries.GROUP_BY_URLNAME, {"urlname": urlname})
         group = data.get("groupByUrlname")
         if group is None:
-            raise ProviderError(f"Group '{urlname}' not found on Meetup")
+            msg = f"Group '{urlname}' not found on Meetup"
+            raise ProviderError(msg)
         return group
 
     async def search_groups(self, **kwargs: Any) -> dict[str, Any]:
+        """Search groups."""
         data = await self._client.execute(queries.SEARCH_GROUPS, kwargs)
         return data["groupSearch"]
 
     async def list_my_groups(self, **kwargs: Any) -> dict[str, Any]:
+        """List groups the authenticated user belongs to."""
         data = await self._client.execute(queries.LIST_MY_GROUPS, kwargs)
         return data["self"]["memberships"]
 
@@ -181,6 +196,7 @@ class MeetupProvider:
     # ------------------------------------------------------------------
 
     async def list_group_members(self, urlname: str, **kwargs: Any) -> dict[str, Any]:
+        """List members of a group."""
         variables: dict[str, Any] = {"urlname": urlname, **kwargs}
         data = await self._client.execute(queries.GROUP_MEMBERS, variables)
         return data["groupByUrlname"]["memberships"]
@@ -226,6 +242,7 @@ class MeetupProvider:
         return {"total": len(members), "members": members}
 
     async def get_group_member(self, urlname: str, member_id: str) -> dict[str, Any]:
+        """Return a single group member."""
         variables = {"urlname": urlname, "memberIds": [member_id]}
         data = await self._client.execute(queries.GROUP_MEMBER_BY_ID, variables)
         edges = data["groupByUrlname"]["memberships"]["edges"]
@@ -262,7 +279,7 @@ class MeetupProvider:
                 variables = {"urlname": urlname, "memberIds": [member_id]}
                 try:
                     data = await self._client.execute(queries.GROUP_MEMBER_BY_ID, variables)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001  # best-effort probe: any failure skips the group
                     logger.debug("Skipping group %s: %s", urlname, exc)
                     return
                 edges = data["groupByUrlname"]["memberships"]["edges"]
@@ -292,15 +309,18 @@ class MeetupProvider:
     # ------------------------------------------------------------------
 
     async def get_event(self, event_id: str) -> dict[str, Any]:
+        """Return an event by ID."""
         data = await self._client.execute(queries.EVENT_BY_ID, {"eventId": event_id})
         return data["event"]
 
     async def list_group_events(self, urlname: str, **kwargs: Any) -> dict[str, Any]:
+        """List events of a group."""
         variables: dict[str, Any] = {"urlname": urlname, **kwargs}
         data = await self._client.execute(queries.GROUP_EVENTS, variables)
         group = data.get("groupByUrlname")
         if group is None:
-            raise ProviderError(f"Group '{urlname}' not found on Meetup")
+            msg = f"Group '{urlname}' not found on Meetup"
+            raise ProviderError(msg)
         return group["events"]
 
     async def list_all_group_events(
@@ -333,6 +353,7 @@ class MeetupProvider:
         return {"total": len(events), "events": events}
 
     async def search_events(self, **kwargs: Any) -> dict[str, Any]:
+        """Search events."""
         data = await self._client.execute(queries.SEARCH_EVENTS, kwargs)
         return data["eventSearch"]
 
@@ -386,8 +407,9 @@ class MeetupProvider:
         # Photo upload uses singular "error" instead of "errors"
         error = result.get("error")
         if error:
+            msg_0 = f"Mutation failed: {error.get('message', str(error))}"
             raise MeetupGraphQLError(
-                f"Mutation failed: {error.get('message', str(error))}",
+                msg_0,
                 [error],
             )
 
@@ -416,6 +438,7 @@ class MeetupProvider:
             excluded_group_ids: Group IDs to exclude from the event.
             active_groups: Include all active groups (default True).
                 Ignored when *group_ids* is provided.
+
         """
         network = await self.get_network(network_urlname)
         network_id = network["id"]
@@ -434,6 +457,7 @@ class MeetupProvider:
         return data["createNetworkEventFilter"]["filterId"]
 
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
+        """Create an event."""
         # Use gql2 endpoint — supports eventType and proNetworkEvents
         # fields that are not available on gql-ext.
         data = await self._client.execute(
@@ -444,6 +468,7 @@ class MeetupProvider:
         return result["event"]
 
     async def edit_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]:
+        """Edit an event."""
         # EditEventInput doesn't support eventType on any endpoint.
         # Map ONLINE to the system-wide online venue instead.
         event_type = kwargs.pop("eventType", None)
@@ -457,6 +482,7 @@ class MeetupProvider:
         return result["event"]
 
     async def event_action(self, event_id: str, action: str) -> dict[str, Any]:
+        """Apply a lifecycle action to an event."""
         action_map: dict[str, tuple[str, str]] = {
             "delete": (queries.DELETE_EVENT, "deleteEvent"),
             "publish": (queries.PUBLISH_EVENT, "publishEventDraft"),
@@ -479,6 +505,7 @@ class MeetupProvider:
     # ------------------------------------------------------------------
 
     async def create_venue(self, **kwargs: Any) -> dict[str, Any]:
+        """Create a venue."""
         data = await self._client.execute(queries.CREATE_VENUE, {"input": kwargs})
         result = data["createVenue"]
         _check_mutation_errors(result)
@@ -489,10 +516,12 @@ class MeetupProvider:
     # ------------------------------------------------------------------
 
     async def get_network(self, urlname: str) -> dict[str, Any]:
+        """Return a Pro network by URL name."""
         data = await self._client.execute(queries.NETWORK_BY_URLNAME, {"urlname": urlname})
         return data["proNetwork"]
 
     async def network_search(self, network_urlname: str, **kwargs: Any) -> dict[str, Any]:
+        """Search events across a Pro network."""
         search_type = kwargs.pop("search_type", "events")
         variables: dict[str, Any] = {"urlname": network_urlname, **kwargs}
 
@@ -515,4 +544,5 @@ def _check_mutation_errors(result: dict[str, Any]) -> None:
     errors = result.get("errors")
     if errors:
         messages = "; ".join(e.get("message", str(e)) for e in errors)
-        raise MeetupGraphQLError(f"Mutation failed: {messages}", errors)
+        msg = f"Mutation failed: {messages}"
+        raise MeetupGraphQLError(msg, errors)

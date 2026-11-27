@@ -18,7 +18,7 @@ __all__: list[str] = []
 async def luma_self(
     provider: LumaProvider = Depends(get_luma_provider),
 ) -> str:
-    """Authenticated Luma user profile."""
+    """Authenticated Luma user profile."""  # noqa: D401  # text is the MCP resource description
     try:
         data = await provider.get_self()
         return json.dumps(data, indent=2)

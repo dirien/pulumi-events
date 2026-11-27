@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-import httpx
-
 from pulumi_events.auth.backends import FileTokenBackend, TokenBackend
+from pulumi_events.auth.jwt_auth import authenticate_jwt
 from pulumi_events.exceptions import AuthenticationError
 
 if TYPE_CHECKING:
-    import asyncio
+    import httpx
 
     from pulumi_events.settings import Settings
 
@@ -33,10 +34,9 @@ class TokenStore:
         backend: TokenBackend | None = None,
         lock: asyncio.Lock | None = None,
     ) -> None:
-        import asyncio as _asyncio
-
+        """Initialise the instance."""
         self._settings = settings
-        self._lock = lock or _asyncio.Lock()
+        self._lock = lock or asyncio.Lock()
         self._backend = backend or FileTokenBackend(settings.token_cache_dir / "meetup_token.json")
         self._token_data: dict[str, object] | None = None
         self._token_data = self._backend.load()
@@ -55,6 +55,7 @@ class TokenStore:
 
         Raises:
             AuthenticationError: When no token is stored or refresh fails.
+
         """
         async with self._lock:
             if self._token_data is None:
@@ -91,8 +92,6 @@ class TokenStore:
     async def _refresh(self, http: httpx.AsyncClient) -> None:
         # Prefer JWT re-authentication if configured (fully headless)
         if self._settings.meetup_jwt_signing_key.get_secret_value():
-            from pulumi_events.auth.jwt_auth import authenticate_jwt
-
             token_data = await authenticate_jwt(self._settings, http)
             self.store_token(token_data)
             logger.info("Meetup token refreshed via JWT")
@@ -115,7 +114,7 @@ class TokenStore:
                 "refresh_token": refresh_token,
             },
         )
-        if resp.status_code != 200:
+        if resp.status_code != HTTPStatus.OK:
             msg = f"Token refresh failed ({resp.status_code}): {resp.text}"
             raise AuthenticationError(msg)
 

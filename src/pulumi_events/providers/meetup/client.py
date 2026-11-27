@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 import webbrowser
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -44,12 +45,14 @@ class MeetupGraphQLClient:
         token_store: TokenStore,
         settings: Settings,
     ) -> None:
+        """Initialise the instance."""
         self._http = http
         self._token_store = token_store
         self._settings = settings
 
     @property
     def is_authenticated(self) -> bool:
+        """Return whether credentials are configured."""
         return self._token_store.is_authenticated
 
     @property
@@ -103,6 +106,7 @@ class MeetupGraphQLClient:
             MeetupGraphQLError: If the response contains ``errors``.
             AuthenticationError: If not authenticated (remote only).
             httpx.HTTPStatusError: If a non-retryable HTTP error persists.
+
         """
         token = await self._ensure_authenticated()
         payload: dict[str, Any] = {"query": query}
@@ -121,7 +125,7 @@ class MeetupGraphQLClient:
                 headers={"Authorization": f"Bearer {token}"},
             )
 
-            if resp.status_code == 401:
+            if resp.status_code == HTTPStatus.UNAUTHORIZED:
                 if not token_refreshed:
                     logger.warning(
                         "Meetup API returned 401 Unauthorized — refreshing token and retrying"
@@ -131,7 +135,10 @@ class MeetupGraphQLClient:
                     continue
                 resp.raise_for_status()
 
-            if resp.status_code == 429 or resp.status_code >= 500:
+            if (
+                resp.status_code == HTTPStatus.TOO_MANY_REQUESTS
+                or resp.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR
+            ):
                 last_exc = None
                 try:
                     resp.raise_for_status()

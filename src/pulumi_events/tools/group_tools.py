@@ -37,6 +37,7 @@ async def meetup_search_groups(
         lon: Longitude for location-based search (required).
         first: Number of results per page (max 200).
         after: Cursor for pagination.
+
     """
     search_filter: dict[str, Any] = {"query": query, "lat": lat, "lon": lon}
 
@@ -63,6 +64,7 @@ async def meetup_list_my_groups(
 
     Args:
         limit: Maximum total number of groups to return.
+
     """
     await ctx.info("Fetching your Meetup groups...")
     return await provider.list_all_my_groups(limit=limit)

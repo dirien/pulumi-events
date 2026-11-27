@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 import anyio
+import httpx
 
 from pulumi_events.exceptions import AuthenticationError, ProviderError
 from pulumi_events.utils import guess_image_content_type
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import httpx
 
     from pulumi_events.settings import Settings
 
@@ -28,12 +28,14 @@ class LumaClient:
     """Low-level async HTTP client for the Luma REST API."""
 
     def __init__(self, http: httpx.AsyncClient, settings: Settings) -> None:
+        """Initialise the instance."""
         self._http = http
-        self._base = settings.luma_api_endpoint
+        self._base = httpx.URL(settings.luma_api_endpoint)
         self._api_key = settings.luma_api_key.get_secret_value()
 
     @property
     def is_authenticated(self) -> bool:
+        """Return whether credentials are configured."""
         return bool(self._api_key)
 
     def _headers(self) -> dict[str, str]:
@@ -42,10 +44,15 @@ class LumaClient:
             raise AuthenticationError(msg)
         return {"x-luma-api-key": self._api_key}
 
+    def _url(self, path: str) -> httpx.URL:
+        """Join *path* onto the API base URL, preserving the base path (e.g. ``/v1``)."""
+        base_path = self._base.path.rstrip("/")
+        return self._base.copy_with(path=f"{base_path}/{path.lstrip('/')}")
+
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Perform a GET request against the Luma API."""
         resp = await self._http.get(
-            f"{self._base}{path}",
+            self._url(path),
             params=params,
             headers=self._headers(),
         )
@@ -54,7 +61,7 @@ class LumaClient:
     async def post(self, path: str, json: dict[str, Any] | None = None) -> dict[str, Any]:
         """Perform a POST request against the Luma API."""
         resp = await self._http.post(
-            f"{self._base}{path}",
+            self._url(path),
             json=json,
             headers=self._headers(),
         )
@@ -127,7 +134,7 @@ class LumaClient:
             content=file_bytes,
             headers={"Content-Type": content_type},
         )
-        if resp.status_code >= 400:
+        if resp.status_code >= HTTPStatus.BAD_REQUEST:
             msg = f"Luma image upload failed ({resp.status_code}): {resp.text}"
             raise ProviderError(msg)
 
@@ -135,11 +142,11 @@ class LumaClient:
 
     @staticmethod
     def _handle_response(resp: httpx.Response) -> dict[str, Any]:
-        if resp.status_code >= 400:
+        if resp.status_code >= HTTPStatus.BAD_REQUEST:
             try:
                 body = resp.json()
                 message = body.get("message", resp.text)
-            except Exception:
+            except Exception:  # noqa: BLE001  # non-JSON error body: fall back to raw text
                 message = resp.text
             msg = f"Luma API error ({resp.status_code}): {message}"
             raise ProviderError(msg)

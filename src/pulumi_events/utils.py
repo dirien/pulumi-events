@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -70,8 +71,9 @@ async def download_image_to_temp(url: str) -> Path:
     Raises:
         ValueError: if the URL is not http(s), the response is not OK,
             the content type is unsupported, or the image exceeds 20 MB.
+
     """
-    if not url.startswith(("http://", "https://")):
+    if urlsplit(url).scheme not in ("http", "https"):
         msg = f"Image URL must start with http:// or https://, got {url!r}"
         raise ValueError(msg)
 
@@ -84,7 +86,7 @@ async def download_image_to_temp(url: str) -> Path:
         if suffix is None:
             # Fall back to the URL's path suffix — some CDNs return
             # generic "application/octet-stream" but the URL ends in .png.
-            suffix = Path(url.split("?", 1)[0]).suffix.lower()
+            suffix = PurePosixPath(urlsplit(url).path).suffix.lower()
             if suffix not in _CONTENT_TYPE_TO_SUFFIX.values():
                 msg = (
                     f"Unsupported image content type {content_type!r} at {url!r}. "
