@@ -50,10 +50,14 @@ No Docker daemon is needed on the runner. `deploy/__main__.py` builds the contai
    ```bash
    cd delivery
    uv sync
-   pulumi stack init <org>/main
-   pulumi delivery register     # writes delivery:source into Pulumi.main.yaml; commit it
-   cd .. && git add delivery && git commit -m "feat: add delivery pipeline" && git push origin main
+   pulumi stack init pulumi/dev   # already created
+   pulumi delivery register       # writes delivery:source into Pulumi.dev.yaml; commit it
+   cd .. && git add delivery && git commit -m "chore(delivery): register pipeline"   # then open a PR
    ```
+
+   Run this from a normal machine, not a sandbox whose proxy rewrites the `Authorization` header: the proxy
+   replaces the per-update lease token with the access token and the update fails with 401
+   ("this command requires logging in").
 
    Registering does not start a run; the push does. Follow it in Pulumi Cloud under Delivery, Pipelines.
 5. Later edits to `delivery/` are picked up on push to the default branch.
