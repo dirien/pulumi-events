@@ -67,7 +67,8 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _validate_https_url(cls, v: str) -> str:
-        if urlsplit(v).scheme != "https":
+        parts = urlsplit(v)
+        if parts.scheme != "https" or not parts.netloc:
             msg = f"Endpoint URL must start with https://, got: {v!r}"
             raise ValueError(msg)
         return v

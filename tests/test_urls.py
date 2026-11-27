@@ -43,15 +43,23 @@ async def test_luma_client_joins_path_and_params() -> None:
     assert seen[0].url.params["id"] == "a b"
 
 
-def test_settings_rejects_non_https_endpoint() -> None:
+@pytest.mark.parametrize(
+    "endpoint",
+    ["http://insecure.test/v1", "https:public-api.luma.com/v1", "https:///v1"],
+)
+def test_settings_rejects_non_https_or_hostless_endpoint(endpoint: str) -> None:
     with pytest.raises(ValidationError):
-        Settings(luma_api_endpoint="http://insecure.test/v1")
+        Settings(luma_api_endpoint=endpoint)
 
 
 @pytest.mark.asyncio
-async def test_download_rejects_non_http_scheme() -> None:
+@pytest.mark.parametrize(
+    "url",
+    ["file:///etc/passwd", "https:example.com/a.png", "https:///a.png", " https://x.test/a.png"],
+)
+async def test_download_rejects_bad_urls(url: str) -> None:
     with pytest.raises(ValueError, match="must start with http"):
-        await download_image_to_temp("file:///etc/passwd")
+        await download_image_to_temp(url)
 
 
 @pytest.mark.asyncio

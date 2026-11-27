@@ -1,5 +1,7 @@
 """Pulumi program: deploy pulumi-events MCP server to AWS ECS Fargate."""
 
+from __future__ import annotations
+
 import hashlib
 import json
 from pathlib import Path
@@ -59,22 +61,36 @@ repo = aws.ecr.Repository(
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_INPUTS = ["src", "pyproject.toml", "uv.lock", ".python-version", "README.md"]
 SOURCE_KEY = "source/pulumi-events.zip"
-RECIPE_VERSION = config.get("imageRecipeVersion") or "1.0.0"
 IMAGE_TAG = "latest"
 PARENT_IMAGE = "public.ecr.aws/docker/library/python:3.12-slim-bookworm"
+_IGNORED_NAMES = {".DS_Store", "Thumbs.db"}
+
+
+def _source_files() -> list[Path]:
+    """List the files that go into the image; the hash and the archive both use this."""
+    files: list[Path] = []
+    for entry in SOURCE_INPUTS:
+        path = REPO_ROOT / entry
+        candidates = sorted(p for p in path.rglob("*") if p.is_file()) if path.is_dir() else [path]
+        files.extend(
+            f
+            for f in candidates
+            if "__pycache__" not in f.parts
+            and f.suffix not in {".pyc", ".pyo"}
+            and f.name not in _IGNORED_NAMES
+        )
+    return files
+
+
+SOURCE_FILES = _source_files()
 
 
 def _source_hash() -> str:
     """Hash every file that goes into the image so code changes trigger a rebuild."""
     digest = hashlib.sha256()
-    for entry in SOURCE_INPUTS:
-        path = REPO_ROOT / entry
-        files = sorted(p for p in path.rglob("*") if p.is_file()) if path.is_dir() else [path]
-        for file in files:
-            if "__pycache__" in file.parts or file.suffix == ".pyc":
-                continue
-            digest.update(str(file.relative_to(REPO_ROOT)).encode())
-            digest.update(file.read_bytes())
+    for file in SOURCE_FILES:
+        digest.update(str(file.relative_to(REPO_ROOT)).encode())
+        digest.update(file.read_bytes())
     return digest.hexdigest()
 
 
@@ -82,13 +98,10 @@ source_hash = _source_hash()
 
 
 def _source_archive() -> pulumi.AssetArchive:
-    assets: dict[str, pulumi.Asset | pulumi.Archive] = {}
-    for entry in SOURCE_INPUTS:
-        path = REPO_ROOT / entry
-        assets[entry] = (
-            pulumi.FileArchive(str(path)) if path.is_dir() else pulumi.FileAsset(str(path))
-        )
-    return pulumi.AssetArchive(assets)
+    """Archive exactly the hashed files, so hash and content cannot drift apart."""
+    return pulumi.AssetArchive(
+        {str(f.relative_to(REPO_ROOT)): pulumi.FileAsset(str(f)) for f in SOURCE_FILES}
+    )
 
 
 source_bucket = aws.s3.Bucket("image-source", force_destroy=True)
@@ -172,13 +185,7 @@ build_sg = aws.ec2.SecurityGroup(
 
 # Component: runs inside the container being built. Mirrors the repo Dockerfile
 # (uv sync --frozen --no-dev into /app/.venv, non-root user `app`).
-build_component = aws.imagebuilder.Component(
-    "image-component",
-    name=f"{pulumi.get_project()}-{pulumi.get_stack()}-app",
-    platform="Linux",
-    version=RECIPE_VERSION,
-    data=source_bucket.id.apply(
-        lambda bucket: f"""name: pulumi-events-app
+COMPONENT_TEMPLATE = """name: pulumi-events-app
 description: Install pulumi-events from the S3 source archive
 schemaVersion: 1.0
 phases:
@@ -187,7 +194,7 @@ phases:
       - name: DownloadSource
         action: S3Download
         inputs:
-          - source: s3://{bucket}/{SOURCE_KEY}
+          - source: s3://{bucket}/{key}
             destination: /tmp/source.zip
       - name: InstallApp
         action: ExecuteBash
@@ -205,8 +212,6 @@ phases:
             - useradd --uid 1000 --gid app --create-home app
             - chown -R app:app /app
 """
-    ),
-)
 
 dockerfile_template = """FROM {{{ imagebuilder:parentImage }}}
 ENV PATH="/app/.venv/bin:$PATH" \\
@@ -219,6 +224,35 @@ EXPOSE 8080
 USER app
 ENTRYPOINT ["pulumi-events"]
 """
+
+
+def _recipe_version() -> str:
+    """Derive the Image Builder semantic version from the build definition.
+
+    Components and container recipes are immutable, and a replacement is created
+    before the old one is deleted, so an edit must come with a new version or the
+    create fails with ResourceAlreadyExists. The patch number is a hash of
+    everything that defines the build; set `imageRecipeVersion` to override.
+    """
+    override = config.get("imageRecipeVersion")
+    if override:
+        return override
+    definition = "\n".join([COMPONENT_TEMPLATE, dockerfile_template, PARENT_IMAGE, SOURCE_KEY])
+    # 7 hex digits stay below Image Builder's per-part limit of 2^30 - 1.
+    return f"1.0.{int(hashlib.sha256(definition.encode()).hexdigest()[:7], 16)}"
+
+
+RECIPE_VERSION = _recipe_version()
+
+build_component = aws.imagebuilder.Component(
+    "image-component",
+    name=f"{pulumi.get_project()}-{pulumi.get_stack()}-app",
+    platform="Linux",
+    version=RECIPE_VERSION,
+    data=source_bucket.id.apply(
+        lambda bucket: COMPONENT_TEMPLATE.format(bucket=bucket, key=SOURCE_KEY)
+    ),
+)
 
 container_recipe = aws.imagebuilder.ContainerRecipe(
     "image-recipe",
@@ -245,6 +279,12 @@ infrastructure = aws.imagebuilder.InfrastructureConfiguration(
     subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),
     security_group_ids=[build_sg.id],
     terminate_instance_on_failure=True,
+    # The S3Download step runs inside the container build, one network hop past the
+    # instance, so IMDSv2 needs a hop limit of 2 to hand it the instance-role token.
+    instance_metadata_options=aws.imagebuilder.InfrastructureConfigurationInstanceMetadataOptionsArgs(
+        http_tokens="required",
+        http_put_response_hop_limit=2,
+    ),
 )
 
 distribution = aws.imagebuilder.DistributionConfiguration(
@@ -303,10 +343,15 @@ image = aws.imagebuilder.Image(
     ),
 )
 
-# ECS pulls the tag Image Builder pushed. The image id is part of the value so the
-# task definition only resolves after the build finishes.
-image_ref = pulumi.Output.all(repo.repository_url, image.id).apply(
-    lambda args: f"{args[0]}:{IMAGE_TAG}"
+# ECS pins the digest this build produced, not the mutable `latest` tag, so an
+# out-of-band ImagePipeline rebuild never reaches running tasks (restarts, scale-out)
+# without a `pulumi up`. The lookup depends on image.id, so it runs after the build.
+built_image = aws.ecr.get_image_output(
+    repository_name=repo.name,
+    image_tag=image.id.apply(lambda _: IMAGE_TAG),
+)
+image_ref = pulumi.Output.all(repo.repository_url, built_image.image_digest).apply(
+    lambda args: f"{args[0]}@{args[1]}"
 )
 
 # ---------------------------------------------------------------------------

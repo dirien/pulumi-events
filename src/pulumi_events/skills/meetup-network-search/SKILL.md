@@ -5,7 +5,7 @@ description: Search a Meetup Pro network (urlname pugs) for events, groups or me
 
 # Meetup Pro network (`pugs`)
 
-The Pro network URL name is `pugs`. `meetup_network_search` and the network options of `meetup_create_event` default to the configured network when `network_urlname` is omitted.
+The Pro network URL name is `pugs`. `meetup_network_search` falls back to the configured network when `network_urlname` is omitted. `meetup_create_event` has no such fallback: network mode turns on only when `pro_network_urlname` is passed, so always pass it for network events. Without it, `pro_network_group_ids` and the other network options are ignored.
 
 ## Search: `meetup_network_search`
 

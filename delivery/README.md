@@ -22,15 +22,17 @@ No Docker daemon is needed on the runner. `deploy/__main__.py` builds the contai
 2. An Image Builder component downloads the zip into a `python:3.12-slim-bookworm` parent image and runs the same
    `uv sync --frozen --no-dev` steps as the root `Dockerfile` (that file stays the reference for local builds;
    keep the component in `deploy/__main__.py` in sync with it).
-3. The image is pushed to the ECR repo with tag `latest`.
+3. The image is pushed to the ECR repo with tag `latest`. The ECS task definition pins the digest of that build
+   (`repo@sha256:...`), never the mutable tag. Component and recipe versions are derived from a hash of the build
+   definition, so editing the component gets a new immutable version automatically (`imageRecipeVersion` overrides).
 4. An `aws.imagebuilder.Image` resource carries a `source-hash` tag with `replace_on_changes`. Any change to the
    source hash replaces it, starts a build, and `pulumi up` waits for the build before the ECS task definition
    is updated. An `IMAGE_SOURCE_HASH` env var in the task definition forces a new revision and rollout.
 5. `aws.imagebuilder.ImagePipeline` exists for out-of-band rebuilds (base image patches):
    `aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <arn>`, or set
    `pulumi config set imageRebuildSchedule "cron(0 4 ? * mon *)"` in the app stack. A pipeline rebuild
-   overwrites `latest` but does not roll out ECS by itself; run a `pulumi up` or
-   `aws ecs update-service --force-new-deployment`.
+   overwrites `latest` only. Running tasks, restarts and scale-out keep the pinned digest until the next
+   `pulumi up` picks up the new digest.
 
 ## Bootstrap (one time)
 

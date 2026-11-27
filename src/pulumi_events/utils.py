@@ -73,7 +73,8 @@ async def download_image_to_temp(url: str) -> Path:
             the content type is unsupported, or the image exceeds 20 MB.
 
     """
-    if urlsplit(url).scheme not in ("http", "https"):
+    parts = urlsplit(url)
+    if url != url.strip() or parts.scheme not in ("http", "https") or not parts.netloc:
         msg = f"Image URL must start with http:// or https://, got {url!r}"
         raise ValueError(msg)
 
