@@ -1,11 +1,12 @@
 """Pulumi program: deploy pulumi-events MCP server to AWS ECS Fargate."""
 
+import hashlib
 import json
+from pathlib import Path
 
 import pulumi
 import pulumi_aws as aws
 import pulumi_awsx as awsx
-import pulumi_docker_build as docker_build
 
 config = pulumi.Config()
 container_cpu = config.get_int("containerCpu") or 256
@@ -49,26 +50,263 @@ repo = aws.ecr.Repository(
 )
 
 # ---------------------------------------------------------------------------
-# Docker Image Build + Push
+# Container image build: EC2 Image Builder (no Docker daemon needed on the runner)
 # ---------------------------------------------------------------------------
-image = docker_build.Image(
-    "image",
-    docker_build.ImageArgs(
-        tags=[repo.repository_url.apply(lambda url: f"{url}:latest")],
-        context=docker_build.BuildContextArgs(location=".."),
-        dockerfile=docker_build.DockerfileArgs(location="../Dockerfile"),
-        platforms=[docker_build.Platform.LINUX_AMD64],
-        push=True,
-        registries=[
-            docker_build.RegistryArgs(
-                address=repo.repository_url,
-                username="AWS",
-                password=aws.ecr.get_authorization_token_output(
-                    registry_id=repo.registry_id,
-                ).password,
-            ),
-        ],
+# Flow: source archive -> S3 -> Image Builder container recipe (component unpacks and
+# `uv sync`s it, mirroring the repo Dockerfile) -> ECR. An aws.imagebuilder.Image
+# resource is replaced whenever the source hash changes, which starts a new build and
+# makes `pulumi up` wait for it. See ../delivery/README.md.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SOURCE_INPUTS = ["src", "pyproject.toml", "uv.lock", ".python-version", "README.md"]
+SOURCE_KEY = "source/pulumi-events.zip"
+RECIPE_VERSION = config.get("imageRecipeVersion") or "1.0.0"
+IMAGE_TAG = "latest"
+PARENT_IMAGE = "public.ecr.aws/docker/library/python:3.12-slim-bookworm"
+
+
+def _source_hash() -> str:
+    """Hash every file that goes into the image so code changes trigger a rebuild."""
+    digest = hashlib.sha256()
+    for entry in SOURCE_INPUTS:
+        path = REPO_ROOT / entry
+        files = sorted(p for p in path.rglob("*") if p.is_file()) if path.is_dir() else [path]
+        for file in files:
+            if "__pycache__" in file.parts or file.suffix == ".pyc":
+                continue
+            digest.update(str(file.relative_to(REPO_ROOT)).encode())
+            digest.update(file.read_bytes())
+    return digest.hexdigest()
+
+
+source_hash = _source_hash()
+
+
+def _source_archive() -> pulumi.AssetArchive:
+    assets: dict[str, pulumi.Asset | pulumi.Archive] = {}
+    for entry in SOURCE_INPUTS:
+        path = REPO_ROOT / entry
+        assets[entry] = (
+            pulumi.FileArchive(str(path)) if path.is_dir() else pulumi.FileAsset(str(path))
+        )
+    return pulumi.AssetArchive(assets)
+
+
+source_bucket = aws.s3.Bucket("image-source", force_destroy=True)
+
+aws.s3.BucketPublicAccessBlock(
+    "image-source-block",
+    bucket=source_bucket.id,
+    block_public_acls=True,
+    block_public_policy=True,
+    ignore_public_acls=True,
+    restrict_public_buckets=True,
+)
+
+source_object = aws.s3.BucketObjectv2(
+    "image-source-object",
+    bucket=source_bucket.id,
+    key=SOURCE_KEY,
+    source=_source_archive(),
+    source_hash=source_hash,
+)
+
+build_role = aws.iam.Role(
+    "image-builder-role",
+    assume_role_policy=json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Action": "sts:AssumeRole",
+                    "Effect": "Allow",
+                    "Principal": {"Service": "ec2.amazonaws.com"},
+                }
+            ],
+        }
     ),
+)
+
+for _name, _arn in {
+    "ssm": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+    "ecr": "arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds",
+}.items():
+    aws.iam.RolePolicyAttachment(
+        f"image-builder-role-{_name}",
+        role=build_role.name,
+        policy_arn=_arn,
+    )
+
+aws.iam.RolePolicy(
+    "image-builder-role-source",
+    role=build_role.id,
+    policy=source_bucket.arn.apply(
+        lambda arn: json.dumps(
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": ["s3:GetObject"],
+                        "Resource": f"{arn}/{SOURCE_KEY}",
+                    }
+                ],
+            }
+        )
+    ),
+)
+
+build_profile = aws.iam.InstanceProfile("image-builder-profile", role=build_role.name)
+
+build_sg = aws.ec2.SecurityGroup(
+    "image-builder-sg",
+    vpc_id=vpc.vpc_id,
+    egress=[
+        aws.ec2.SecurityGroupEgressArgs(
+            protocol="-1",
+            from_port=0,
+            to_port=0,
+            cidr_blocks=["0.0.0.0/0"],
+        )
+    ],
+)
+
+# Component: runs inside the container being built. Mirrors the repo Dockerfile
+# (uv sync --frozen --no-dev into /app/.venv, non-root user `app`).
+build_component = aws.imagebuilder.Component(
+    "image-component",
+    name=f"{pulumi.get_project()}-{pulumi.get_stack()}-app",
+    platform="Linux",
+    version=RECIPE_VERSION,
+    data=source_bucket.id.apply(
+        lambda bucket: f"""name: pulumi-events-app
+description: Install pulumi-events from the S3 source archive
+schemaVersion: 1.0
+phases:
+  - name: build
+    steps:
+      - name: DownloadSource
+        action: S3Download
+        inputs:
+          - source: s3://{bucket}/{SOURCE_KEY}
+            destination: /tmp/source.zip
+      - name: InstallApp
+        action: ExecuteBash
+        inputs:
+          commands:
+            - set -euo pipefail
+            - mkdir -p /app
+            - python -m zipfile -e /tmp/source.zip /app
+            - pip install --no-cache-dir uv
+            - cd /app && UV_PYTHON_DOWNLOADS=never uv sync --frozen --no-dev --no-install-project
+            - cd /app && UV_PYTHON_DOWNLOADS=never uv sync --frozen --no-dev --no-editable
+            - rm -rf /app/src /tmp/source.zip /root/.cache
+            - pip uninstall -y uv
+            - groupadd --gid 1000 app
+            - useradd --uid 1000 --gid app --create-home app
+            - chown -R app:app /app
+"""
+    ),
+)
+
+dockerfile_template = """FROM {{{ imagebuilder:parentImage }}}
+ENV PATH="/app/.venv/bin:$PATH" \\
+    PULUMI_EVENTS_SERVER_HOST="0.0.0.0" \\
+    PULUMI_EVENTS_AUTO_OPEN_BROWSER="false"
+{{{ imagebuilder:environments }}}
+{{{ imagebuilder:components }}}
+WORKDIR /app
+EXPOSE 8080
+USER app
+ENTRYPOINT ["pulumi-events"]
+"""
+
+container_recipe = aws.imagebuilder.ContainerRecipe(
+    "image-recipe",
+    name=f"{pulumi.get_project()}-{pulumi.get_stack()}",
+    version=RECIPE_VERSION,
+    container_type="DOCKER",
+    parent_image=PARENT_IMAGE,
+    platform_override="Linux",
+    components=[
+        aws.imagebuilder.ContainerRecipeComponentArgs(component_arn=build_component.arn),
+    ],
+    dockerfile_template_data=dockerfile_template,
+    target_repository=aws.imagebuilder.ContainerRecipeTargetRepositoryArgs(
+        repository_name=repo.name,
+        service="ECR",
+    ),
+)
+
+infrastructure = aws.imagebuilder.InfrastructureConfiguration(
+    "image-infra",
+    name=f"{pulumi.get_project()}-{pulumi.get_stack()}",
+    instance_profile_name=build_profile.name,
+    instance_types=["t3.large"],
+    subnet_id=vpc.private_subnet_ids.apply(lambda ids: ids[0]),
+    security_group_ids=[build_sg.id],
+    terminate_instance_on_failure=True,
+)
+
+distribution = aws.imagebuilder.DistributionConfiguration(
+    "image-distribution",
+    name=f"{pulumi.get_project()}-{pulumi.get_stack()}",
+    distributions=[
+        aws.imagebuilder.DistributionConfigurationDistributionArgs(
+            region=aws.get_region().region,
+            container_distribution_configuration=(
+                aws.imagebuilder.DistributionConfigurationDistributionContainerDistributionConfigurationArgs(
+                    container_tags=[IMAGE_TAG],
+                    target_repository=aws.imagebuilder.DistributionConfigurationDistributionContainerDistributionConfigurationTargetRepositoryArgs(
+                        repository_name=repo.name,
+                        service="ECR",
+                    ),
+                )
+            ),
+        )
+    ],
+)
+
+# Image pipeline: kept for out-of-band rebuilds (base image patches), e.g.
+#   aws imagebuilder start-image-pipeline-execution --image-pipeline-arn <arn>
+# It is not the code-change trigger; the Image resource below is. Set the config
+# `imageRebuildSchedule` (cron, e.g. "cron(0 4 ? * mon *)") to rebuild on a schedule.
+rebuild_schedule = config.get("imageRebuildSchedule")
+image_pipeline = aws.imagebuilder.ImagePipeline(
+    "image-pipeline",
+    name=f"{pulumi.get_project()}-{pulumi.get_stack()}",
+    container_recipe_arn=container_recipe.arn,
+    infrastructure_configuration_arn=infrastructure.arn,
+    distribution_configuration_arn=distribution.arn,
+    status="ENABLED",
+    schedule=(
+        aws.imagebuilder.ImagePipelineScheduleArgs(
+            schedule_expression=rebuild_schedule,
+            pipeline_execution_start_condition="EXPRESSION_MATCH_ONLY",
+        )
+        if rebuild_schedule
+        else None
+    ),
+)
+
+# Code-change trigger: creating an Image starts a build and the provider waits for it.
+# `source-hash` is in replace_on_changes, so a new hash replaces the Image (create
+# first, then delete the old one), which rebuilds from the freshly uploaded archive.
+image = aws.imagebuilder.Image(
+    "image",
+    container_recipe_arn=container_recipe.arn,
+    infrastructure_configuration_arn=infrastructure.arn,
+    distribution_configuration_arn=distribution.arn,
+    tags={"source-hash": source_hash},
+    opts=pulumi.ResourceOptions(
+        replace_on_changes=["tags"],
+        depends_on=[source_object],
+    ),
+)
+
+# ECS pulls the tag Image Builder pushed. The image id is part of the value so the
+# task definition only resolves after the build finishes.
+image_ref = pulumi.Output.all(repo.repository_url, image.id).apply(
+    lambda args: f"{args[0]}:{IMAGE_TAG}"
 )
 
 # ---------------------------------------------------------------------------
@@ -351,7 +589,7 @@ task_definition = aws.ecs.TaskDefinition(
         execution_role_arn=execution_role.arn,
         task_role_arn=task_role.arn,
         container_definitions=pulumi.Output.all(
-            image.ref,
+            image_ref,
             log_group.name,
             app_secrets.arn,
             cloudfront_domain,
@@ -375,6 +613,12 @@ task_definition = aws.ecs.TaskDefinition(
                             {
                                 "name": "PULUMI_EVENTS_SERVER_HOST",
                                 "value": "0.0.0.0",  # noqa: S104
+                            },
+                            {
+                                # Changes with the code so the task definition rolls out
+                                # the freshly built image even though the tag is `latest`.
+                                "name": "IMAGE_SOURCE_HASH",
+                                "value": source_hash,
                             },
                             {
                                 "name": "PULUMI_EVENTS_SERVER_PORT",
