@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -13,6 +14,7 @@ from fastmcp.server.auth import StaticTokenVerifier
 from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
+from fastmcp.skills.provider import SkillsDirectoryProvider
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from pulumi_events.auth.backends import EnvTokenBackend, FileTokenBackend
@@ -33,6 +35,9 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 logger = logging.getLogger(__name__)
+
+# Agent Skills served over MCP as skill://<name>/SKILL.md resources (SEP-2640).
+SKILLS_DIR = Path(__file__).parent / "skills"
 
 # Lifespan state — filled during startup, read by custom routes
 _token_store: TokenStore | None = None
@@ -183,7 +188,9 @@ mcp = FastMCP(
         "Luma uses an API key (pre-configured). "
         "Tools prefixed with meetup_ or luma_ target each platform. "
         "Resources: meetup://self, meetup://group/{urlname}, "
-        "luma://self, luma://event/{event_id}, etc."
+        "luma://self, luma://event/{event_id}, etc. "
+        "Skills: read skill://<name>/SKILL.md for step-by-step workflows "
+        "(create-edit-events, meetup-network-search, luma-send-invites)."
     ),
     lifespan=app_lifespan,
     middleware=[
@@ -222,6 +229,9 @@ mcp = FastMCP(
         ),
     ],
 )
+
+
+mcp.add_provider(SkillsDirectoryProvider(SKILLS_DIR))
 
 
 # ---------------------------------------------------------------------------

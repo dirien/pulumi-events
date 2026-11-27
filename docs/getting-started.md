@@ -282,6 +282,10 @@ The server uses FastMCP's middleware for reliability and performance:
 - **RetryMiddleware** — automatically retries on transient `ConnectionError` / `TimeoutError` with exponential backoff (2 retries, 1–10s delay)
 - **ResponseCachingMiddleware** — caches responses from read-only tools (list, search, get) for 5 minutes to reduce API calls; mutation tools are never cached
 
+### Skills
+
+The server also publishes three Agent Skills as `skill://<name>/SKILL.md` resources (and via the `io.modelcontextprotocol/skills` extension): `create-edit-events`, `meetup-network-search` and `luma-send-invites`. Clients that support skills load them on demand; others can read the resources directly. Add a skill by creating `src/pulumi_events/skills/<name>/SKILL.md` whose folder name matches its frontmatter `name`.
+
 ### Tool Metadata
 
 All 23 tools include metadata for better LLM integration:

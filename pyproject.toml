@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "Engin Diri", email = "engin.diri@ediri.de" }]
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.4.4",
+    "fastmcp>=4.2.6,<5",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
