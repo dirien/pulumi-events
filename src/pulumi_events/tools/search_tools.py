@@ -44,6 +44,7 @@ async def meetup_search_events(
         event_type: Event type filter (e.g. PHYSICAL, ONLINE).
         first: Number of results per page (max 200).
         after: Cursor for pagination.
+
     """
     search_filter: dict[str, Any] = {"query": query, "lat": lat, "lon": lon}
     if start_date is not None:
@@ -97,6 +98,7 @@ async def meetup_network_search(
         desc: Sort descending (default True).
         first: Number of results per page.
         after: Cursor for pagination.
+
     """
     urlname = network_urlname or settings.meetup_pro_network_urlname
     variables: dict[str, Any] = {"search_type": search_type, "first": first}
@@ -114,9 +116,8 @@ async def meetup_network_search(
         if sort is not None:
             variables["sort"] = sort
             variables["desc"] = desc
-    else:
-        if query is not None:
-            variables["query"] = query
+    elif query is not None:
+        variables["query"] = query
 
     if after is not None:
         variables["after"] = after

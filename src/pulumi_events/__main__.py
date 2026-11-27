@@ -18,7 +18,7 @@ class _UnifyNameFilter(logging.Filter):
 
 def main() -> None:
     """Start the pulumi-events MCP server."""
-    import fastmcp
+    import fastmcp  # noqa: PLC0415  # deferred so logging is configured first
 
     # Disable FastMCP's Rich logging so it propagates to root like everything else.
     fastmcp.settings.enable_rich_logging = False
@@ -37,8 +37,9 @@ def main() -> None:
     fmcp_logger.handlers.clear()
     fmcp_logger.propagate = True
 
-    from pulumi_events.server import mcp
-    from pulumi_events.settings import Settings
+    # Deferred: importing the server reads settings and registers tools at import time.
+    from pulumi_events.server import mcp  # noqa: PLC0415
+    from pulumi_events.settings import Settings  # noqa: PLC0415
 
     settings = Settings()
     mcp.run(

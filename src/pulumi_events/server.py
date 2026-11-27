@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import html
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
-from fastmcp.server.auth.providers.google import GoogleProvider as GoogleProvider
+from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware, RetryMiddleware
-from mcp.server.auth.provider import AccessToken
-from starlette.requests import Request
+from fastmcp.skills.provider import SkillsDirectoryProvider
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from pulumi_events.auth.backends import EnvTokenBackend, FileTokenBackend
@@ -29,7 +28,16 @@ from pulumi_events.providers.meetup.provider import MeetupProvider
 from pulumi_events.providers.registry import ProviderRegistry
 from pulumi_events.settings import Settings
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from mcp.server.auth.provider import AccessToken
+    from starlette.requests import Request
+
 logger = logging.getLogger(__name__)
+
+# Agent Skills served over MCP as skill://<name>/SKILL.md resources (SEP-2640).
+SKILLS_DIR = Path(__file__).parent / "skills"
 
 # Lifespan state — filled during startup, read by custom routes
 _token_store: TokenStore | None = None
@@ -37,9 +45,9 @@ _settings: Settings | None = None
 
 
 @asynccontextmanager
-async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+async def app_lifespan(_server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     """Set up shared resources (HTTP client, providers, token store)."""
-    global _token_store, _settings
+    global _token_store  # noqa: PLW0603  # shared with custom routes
 
     # Reuse the module-level Settings instance (already created for auth setup).
     settings = _settings
@@ -146,7 +154,7 @@ if (
         _base_url = _settings.base_url
     else:
         _host = "localhost" if _settings.server_host == "127.0.0.1" else _settings.server_host
-        _base_url = f"http://{_host}:{_settings.server_port}"
+        _base_url = str(httpx.URL(scheme="http", host=_host, port=_settings.server_port))
     _auth = GoogleProviderWithStaticToken(
         client_id=_settings.google_client_id.get_secret_value(),
         client_secret=_settings.google_client_secret.get_secret_value(),
@@ -187,7 +195,9 @@ mcp = FastMCP(
         "luma_remove_host and inspect approval state with "
         "luma_list_ticket_types. "
         "Resources: meetup://self, meetup://group/{urlname}, "
-        "luma://self, luma://event/{event_id}, etc."
+        "luma://self, luma://event/{event_id}, etc. "
+        "Skills: read skill://<name>/SKILL.md for step-by-step workflows "
+        "(create-edit-events, meetup-network-search, luma-send-invites)."
     ),
     lifespan=app_lifespan,
     middleware=[
@@ -228,6 +238,9 @@ mcp = FastMCP(
         ),
     ],
 )
+
+
+mcp.add_provider(SkillsDirectoryProvider(SKILLS_DIR))
 
 
 # ---------------------------------------------------------------------------

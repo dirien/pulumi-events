@@ -27,6 +27,7 @@ class MeetupGraphQLError(ProviderError):
     """Meetup GraphQL API returned errors."""
 
     def __init__(self, message: str, errors: list[dict[str, object]]) -> None:
+        """Initialise the instance."""
         super().__init__(message)
         self.errors = errors
 

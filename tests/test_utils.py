@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 import pytest
 
 from pulumi_events.utils import download_image_to_temp
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 
 def _mock_transport(
     *, content: bytes = b"fake-image-bytes", content_type: str = "image/png", status: int = 200
 ) -> httpx.MockTransport:
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(_request: httpx.Request) -> httpx.Response:
         headers = {"content-type": content_type} if content_type else {}
         return httpx.Response(status, content=content, headers=headers)
 
@@ -114,9 +116,7 @@ class TestDownloadImageToTemp:
             await download_image_to_temp("https://cdn.example.com/missing.png")
 
     @pytest.mark.asyncio
-    async def test_follows_redirects(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    async def test_follows_redirects(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # A 301 should transparently land on the final image.
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/short":

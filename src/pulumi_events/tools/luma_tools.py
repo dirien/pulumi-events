@@ -25,6 +25,8 @@ __all__: list[str] = []
 
 logger = logging.getLogger(__name__)
 
+_MAX_INVITE_MESSAGE_LENGTH = 200
+
 
 class GuestInvite(BaseModel):
     """A person to invite to a Luma event."""
@@ -95,12 +97,16 @@ class RegistrationQuestion(BaseModel):
     )
 
 
+_SLUG_MIN_LENGTH = 3
+_SLUG_MAX_LENGTH = 50
+
+
 def _question_id_from_label(label: str, index: int) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:40].rstrip("-")
     return f"q-{slug}" if slug else f"q-{index + 1}"
 
 
-def _prepare_registration_questions(
+def _prepare_registration_questions(  # noqa: C901  # flat per-question validation
     questions: list[RegistrationQuestion],
 ) -> list[dict[str, Any]]:
     """Validate questions and build the Luma payload, auto-generating IDs.
@@ -113,27 +119,31 @@ def _prepare_registration_questions(
     for i, q in enumerate(questions):
         if q.question_type in _OPTION_QUESTION_TYPES:
             if not q.options:
-                raise ToolError(
+                msg = (
                     f"Registration question '{q.label}': question_type "
                     f"'{q.question_type}' requires a non-empty 'options' list."
                 )
+                raise ToolError(msg)
             if len(q.options) > _MAX_QUESTION_OPTIONS:
-                raise ToolError(
+                msg = (
                     f"Registration question '{q.label}': at most "
                     f"{_MAX_QUESTION_OPTIONS} options are allowed."
                 )
+                raise ToolError(msg)
         elif q.options is not None:
-            raise ToolError(
+            msg = (
                 f"Registration question '{q.label}': 'options' is only valid "
                 "for dropdown and multi-select questions."
             )
+            raise ToolError(msg)
         if q.question_type != "company" and (
             q.collect_job_title is not None or q.job_title_label is not None
         ):
-            raise ToolError(
+            msg = (
                 f"Registration question '{q.label}': collect_job_title and "
                 "job_title_label are only valid for 'company' questions."
             )
+            raise ToolError(msg)
 
         qid = q.id or _question_id_from_label(q.label, i)
         base, n = qid, 2
@@ -158,7 +168,7 @@ def _prepare_registration_questions(
     return payload
 
 
-def _apply_optional_event_fields(
+def _apply_optional_event_fields(  # noqa: C901, PLR0912  # flat optional-field mapping
     payload: dict[str, Any],
     *,
     max_capacity: int | None,
@@ -176,7 +186,8 @@ def _apply_optional_event_fields(
     """Validate and merge the shared optional create/update fields into *payload*."""
     if max_capacity is not None:
         if max_capacity < 0:
-            raise ToolError("max_capacity must be >= 0 (0 removes the capacity limit).")
+            msg = "max_capacity must be >= 0 (0 removes the capacity limit)."
+            raise ToolError(msg)
         payload["max_capacity"] = max_capacity if max_capacity > 0 else None
     if waitlist_status is not None:
         payload["waitlist_status"] = waitlist_status
@@ -185,8 +196,9 @@ def _apply_optional_event_fields(
     if show_guest_list is not None:
         payload["show_guest_list"] = show_guest_list
     if slug is not None:
-        if not 3 <= len(slug) <= 50:
-            raise ToolError("slug must be between 3 and 50 characters.")
+        if not _SLUG_MIN_LENGTH <= len(slug) <= _SLUG_MAX_LENGTH:
+            msg = "slug must be between 3 and 50 characters."
+            raise ToolError(msg)
         payload["slug"] = slug
     if location_visibility is not None:
         payload["location_visibility"] = location_visibility
@@ -197,7 +209,8 @@ def _apply_optional_event_fields(
     if reminders_disabled is not None:
         payload["reminders_disabled"] = reminders_disabled
     if feedback_email_delay is not None and feedback_email_enabled is None:
-        raise ToolError("feedback_email_delay requires feedback_email_enabled to be set as well.")
+        msg = "feedback_email_delay requires feedback_email_enabled to be set as well."
+        raise ToolError(msg)
     if feedback_email_enabled is not None:
         feedback: dict[str, Any] = {"enabled": feedback_email_enabled}
         if feedback_email_delay is not None:
@@ -261,6 +274,7 @@ async def luma_list_events(
 
     Args:
         limit: Maximum total number of events to return.
+
     """
     await ctx.info("Fetching Luma events...")
     return await provider.list_all_events(limit=limit)
@@ -290,6 +304,7 @@ async def luma_get_event(
 
     Args:
         event_id: The Luma event API ID (evt-...).
+
     """
     await ctx.info(f"Fetching Luma event {event_id}...")
     return await provider.get_event(event_id)
@@ -313,7 +328,7 @@ async def luma_get_event(
     },
 )
 @handle_provider_errors
-async def luma_create_event(
+async def luma_create_event(  # noqa: C901, PLR0912, PLR0915  # flat optional-field mapping; signature is the MCP API
     name: str,
     start_at: str,
     end_at: str,
@@ -343,8 +358,9 @@ async def luma_create_event(
     provider: LumaProvider = Depends(get_luma_provider),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Create a Luma event, including invite-only events (approval, capacity,
-    waitlist, registration questions) — no Luma UI steps needed.
+    """Create a Luma event, including invite-only events, with no Luma UI steps needed.
+
+    Invite-only covers approval, capacity, waitlist and registration questions.
 
     For physical events, ALWAYS look up the Google Maps place ID for the venue
     and pass it as geo_address_json. Do NOT pass raw Meetup venue objects or
@@ -418,9 +434,11 @@ async def luma_create_event(
         feedback_email_enabled: Whether to send the post-event feedback email.
         feedback_email_delay: ISO 8601 duration after event end (default PT0M,
             max P7D, e.g. "PT2H"). Requires feedback_email_enabled.
+
     """
     if cover_image_path is not None and cover_image_url is not None:
-        raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
+        msg = "Provide either cover_image_path or cover_image_url, not both."
+        raise ToolError(msg)
 
     input_data: dict[str, Any] = {
         "name": name,
@@ -468,7 +486,8 @@ async def luma_create_event(
                 try:
                     temp_image = await download_image_to_temp(cover_image_url)
                 except (ValueError, httpx.HTTPError) as exc:
-                    raise ToolError(f"Failed to download cover_image_url: {exc}") from exc
+                    msg = f"Failed to download cover_image_url: {exc}"
+                    raise ToolError(msg) from exc
                 image_path = temp_image
             else:
                 assert cover_image_path is not None  # noqa: S101 — narrowed by image_requested
@@ -489,18 +508,18 @@ async def luma_create_event(
         if require_approval is not None:
             await ctx.info("Setting require_approval on ticket types...")
             try:
-                ticket_types = await provider.set_require_approval(event_id, require_approval)
+                ticket_types = await provider.set_require_approval(
+                    event_id, require_approval=require_approval
+                )
             except (ProviderError, KeyError) as exc:
-                raise ToolError(
-                    f"Event {event_id} was created, but setting require_approval failed: {exc}"
-                ) from exc
+                msg_0 = f"Event {event_id} was created, but setting require_approval failed: {exc}"
+                raise ToolError(msg_0) from exc
 
         try:
             result = await provider.get_event(event_id)
         except ProviderError as exc:
-            raise ToolError(
-                f"Event {event_id} was created, but fetching it back failed: {exc}"
-            ) from exc
+            msg_0 = f"Event {event_id} was created, but fetching it back failed: {exc}"
+            raise ToolError(msg_0) from exc
         if ticket_types is not None:
             result = {**result, "ticket_types": ticket_types}
 
@@ -518,7 +537,7 @@ async def luma_create_event(
     annotations={"idempotentHint": True},
 )
 @handle_provider_errors
-async def luma_update_event(
+async def luma_update_event(  # noqa: C901, PLR0912, PLR0915  # flat optional-field mapping; signature is the MCP API
     event_id: str,
     ctx: Context,
     name: str | None = None,
@@ -613,9 +632,11 @@ async def luma_update_event(
         suppress_notifications: True prevents Luma from emailing/notifying
             guests about changes to the event name, time, or location made in
             this update.
+
     """
     if cover_image_path is not None and cover_image_url is not None:
-        raise ToolError("Provide either cover_image_path or cover_image_url, not both.")
+        msg = "Provide either cover_image_path or cover_image_url, not both."
+        raise ToolError(msg)
 
     kwargs: dict[str, Any] = {}
     if name is not None:
@@ -667,7 +688,8 @@ async def luma_update_event(
                 try:
                     temp_image = await download_image_to_temp(cover_image_url)
                 except (ValueError, httpx.HTTPError) as exc:
-                    raise ToolError(f"Failed to download cover_image_url: {exc}") from exc
+                    msg = f"Failed to download cover_image_url: {exc}"
+                    raise ToolError(msg) from exc
                 image_path = temp_image
             else:
                 assert cover_image_path is not None  # noqa: S101 — narrowed by image_requested
@@ -686,11 +708,12 @@ async def luma_update_event(
         if require_approval is not None:
             await ctx.info("Setting require_approval on ticket types...")
             try:
-                ticket_types = await provider.set_require_approval(event_id, require_approval)
+                ticket_types = await provider.set_require_approval(
+                    event_id, require_approval=require_approval
+                )
             except (ProviderError, KeyError) as exc:
-                raise ToolError(
-                    f"Event {event_id} was updated, but setting require_approval failed: {exc}"
-                ) from exc
+                msg_0 = f"Event {event_id} was updated, but setting require_approval failed: {exc}"
+                raise ToolError(msg_0) from exc
 
         result = await provider.get_event(event_id)
         if ticket_types is not None:
@@ -717,6 +740,7 @@ async def luma_cancel_event(
 
     Args:
         event_id: The Luma event API ID (evt-...).
+
     """
     await ctx.info(f"Cancelling Luma event {event_id}...")
     return await provider.cancel_event(event_id)
@@ -753,6 +777,7 @@ async def luma_add_host(
             (listed as host without management access).
         is_visible: Whether the host is shown on the event page
             (default true).
+
     """
     await ctx.info(f"Adding host {email} to Luma event {event_id}...")
     await provider.add_host(
@@ -791,9 +816,11 @@ async def luma_update_host(
         email: Email of the host to update.
         access_level: New permissions — "manager", "check-in", or "none".
         is_visible: Whether the host is shown on the event page.
+
     """
     if access_level is None and is_visible is None:
-        raise ToolError("Provide at least one of access_level or is_visible to change.")
+        msg = "Provide at least one of access_level or is_visible to change."
+        raise ToolError(msg)
     await ctx.info(f"Updating host {email} on Luma event {event_id}...")
     await provider.update_host(event_id, email, access_level=access_level, is_visible=is_visible)
     event = await provider.get_event(event_id)
@@ -822,6 +849,7 @@ async def luma_remove_host(
     Args:
         event_id: The Luma event API ID (evt-...).
         email: Email of the host to remove.
+
     """
     await ctx.info(f"Removing host {email} from Luma event {event_id}...")
     await provider.remove_host(event_id, email)
@@ -853,6 +881,7 @@ async def luma_list_ticket_types(
 
     Args:
         event_id: The Luma event API ID (evt-...).
+
     """
     await ctx.info(f"Fetching ticket types for Luma event {event_id}...")
     entries = await provider.list_ticket_types(event_id)
@@ -876,6 +905,7 @@ async def luma_list_people(
 
     Args:
         limit: Maximum total number of people to return.
+
     """
     await ctx.info("Fetching Luma people...")
     return await provider.list_all_people(limit=limit)
@@ -898,6 +928,7 @@ async def luma_list_guests(
     Args:
         event_id: The Luma event API ID (evt-...).
         limit: Maximum total number of guests to return.
+
     """
     await ctx.info(f"Fetching guests for Luma event {event_id}...")
     return await provider.list_all_guests(event_id, limit=limit)
@@ -926,11 +957,14 @@ async def luma_send_invites(
             optional ``name``.
         message: Optional note included in the invites (max 200 characters).
             Applies to the whole batch, not to individual guests.
+
     """
     if not guests:
-        raise ToolError("Provide at least one guest to invite.")
-    if message is not None and len(message) > 200:
-        raise ToolError("message must be 200 characters or fewer.")
+        msg = "Provide at least one guest to invite."
+        raise ToolError(msg)
+    if message is not None and len(message) > _MAX_INVITE_MESSAGE_LENGTH:
+        msg = "message must be 200 characters or fewer."
+        raise ToolError(msg)
 
     payload = [g.model_dump(exclude_none=True) for g in guests]
 

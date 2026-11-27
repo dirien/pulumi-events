@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import urllib.parse
 from typing import TYPE_CHECKING
 
 import httpx
@@ -18,14 +17,15 @@ logger = logging.getLogger(__name__)
 
 async def build_auth_url(client_id: str, settings: Settings) -> str:
     """Build the Meetup OAuth2 authorization URL."""
-    params = urllib.parse.urlencode(
-        {
+    url = httpx.URL(
+        settings.meetup_auth_endpoint,
+        params={
             "client_id": client_id,
             "response_type": "code",
             "redirect_uri": settings.meetup_redirect_uri,
-        }
+        },
     )
-    return f"{settings.meetup_auth_endpoint}?{params}"
+    return str(url)
 
 
 async def exchange_code(

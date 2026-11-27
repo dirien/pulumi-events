@@ -1,0 +1,9 @@
+[project]
+name = "pulumi-events-delivery"
+version = "0.1.0"
+description = "Pulumi Delivery pipeline for the pulumi-events infrastructure stack"
+requires-python = ">=3.12"
+dependencies = [
+    "pulumi>=3.277.0",
+    "pulumi-delivery>=0.2.0",
+]

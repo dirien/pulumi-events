@@ -6,10 +6,11 @@ readme = "README.md"
 authors = [{ name = "Engin Diri", email = "engin.diri@ediri.de" }]
 requires-python = ">=3.12"
 dependencies = [
-    "fastmcp>=3.4.7",
+    "fastmcp>=4.2.6,<5",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
+    "tzdata>=2025.2",
 ]
 
 [project.scripts]
@@ -28,24 +29,46 @@ line-length = 99
 src = ["src"]
 
 [tool.ruff.lint]
-select = [
-    "E", "W", "F", "I", "N", "UP", "B", "A", "C4",
-    "SIM", "RUF", "ANN", "ASYNC", "S", "PTH",
-]
+select = ["ALL"]
 ignore = [
-    "ANN401",   # Any in **kwargs — unavoidable for protocol / provider APIs
-    "B008",     # Depends() in defaults — standard FastMCP pattern
-    "S603",     # subprocess calls — needed for Pulumi ESC
-    "S607",     # partial executable path — "pulumi" CLI
+    "D203",    # conflicts with D211 (no blank line before class docstring)
+    "D213",    # conflicts with D212 (summary on first line)
+    "COM812",  # conflicts with the ruff formatter
+    "CPY001",  # copyright headers are not used in this project
+    "B008",    # Depends() in defaults is the standard FastMCP pattern
+    "ANN401",  # Any is unavoidable for **kwargs in protocol / provider APIs
+    "S603",    # subprocess calls are needed for the Pulumi ESC CLI
+    "S607",    # partial executable path ("pulumi" CLI)
+    "TRY003",  # project exceptions (ProviderError/ToolError) are built from contextual messages
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pulumi_events"]
 
+[tool.ruff.lint.flake8-type-checking]
+# FastMCP resolves tool/resource annotations at runtime, so they must stay real imports.
+runtime-evaluated-decorators = [
+    "pulumi_events.server.mcp.tool",
+    "pulumi_events.server.mcp.resource",
+]
+
 [tool.ruff.lint.per-file-ignores]
+"src/pulumi_events/tools/*" = [
+    "D417",    # docstrings are LLM-visible tool descriptions; injected deps (ctx, provider) are not tool args
+    "PLR0913", # tool signatures are the public MCP API and must not change
+    "PLR0917", # tool signatures are the public MCP API and must not change
+    "FBT001",  # MCP clients always pass tool arguments by name, never positionally
+    "FBT002",  # MCP clients always pass tool arguments by name, never positionally
+]
 "tests/*" = [
-    "S101",   # use of assert is expected in pytest
-    "ANN201", # public test functions don't need return annotations
+    "S101",    # use of assert is expected in pytest
+    "ANN201",  # public test functions don't need return annotations
+    "INP001",  # tests/ is a rootdir-imported pytest directory, not a package
+    "D101",    # test classes are self-describing groupings
+    "D102",    # test methods are self-describing by name
+    "D103",    # test functions are self-describing by name
+    "D107",    # test helper __init__ needs no docstring
+    "PLR2004", # magic values are normal in test assertions
 ]
 
 [dependency-groups]

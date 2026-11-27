@@ -10,13 +10,14 @@
 
 MCP server for managing events on Meetup.com and Luma via AI assistants like Claude.
 
-Built with [FastMCP 3.x](https://gofastmcp.com), it exposes Meetup's GraphQL API and Luma's REST API as MCP tools and resources so LLMs can search events, manage groups, create and publish events, and more.
+Built with [FastMCP 4.x](https://gofastmcp.com), it exposes Meetup's GraphQL API and Luma's REST API as MCP tools and resources so LLMs can search events, manage groups, create and publish events, and more.
 
 ## Features
 
 - **27 tools** across two platforms (Meetup + Luma), tagged by platform and domain
 - **Invite-only Luma events end-to-end** — require-approval, capacity + waitlist, registration questions, host management, and members-only visibility, all without touching the Luma UI
 - **6 resources** for read-only lookups (user profiles, group/event/network details)
+- **3 skills** served over MCP (`skill://<name>/SKILL.md`, extension `io.modelcontextprotocol/skills`) with workflows for event create/edit, Pro network search, and Luma invites
 - **Cover image upload** — pass a local file path when creating/updating events; the server handles CDN upload automatically (Luma presigned URL, Meetup two-step photo upload)
 - Auto-pagination on all list tools — single tool call returns all results
 - Meetup: JWT authentication for headless server-to-server access (no browser needed), with OAuth2 fallback
@@ -225,6 +226,16 @@ Luma resolves the full address, coordinates, and map pin from the place ID autom
 | `meetup://network/{urlname}` | Meetup Pro network info |
 | `luma://self` | Authenticated Luma user profile |
 | `luma://event/{event_id}` | Luma event details by API ID |
+
+## Skills
+
+Agent Skills ship inside the package (`src/pulumi_events/skills/`) and are exposed through the MCP skills extension (SEP-2640) and as plain resources:
+
+| URI | Description |
+|-----|-------------|
+| `skill://create-edit-events/SKILL.md` | Create and edit Meetup and Luma events (datetime and venue rules) |
+| `skill://meetup-network-search/SKILL.md` | Search the Pro network (`pugs`) and create network events with group IDs |
+| `skill://luma-send-invites/SKILL.md` | Invite people to a Luma event by email |
 
 ## Configuration
 

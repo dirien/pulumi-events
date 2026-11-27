@@ -45,15 +45,14 @@ async def list_platforms(
     luma: LumaProvider = Depends(get_luma_provider),
 ) -> dict[str, Any]:
     """List configured event platforms with their authentication status and capabilities."""
-    platforms = []
-    for provider in (meetup, luma):
-        platforms.append(
-            {
-                "name": provider.name,
-                "authenticated": provider.is_authenticated,
-                "capabilities": sorted(c.value for c in provider.capabilities),
-            }
-        )
+    platforms = [
+        {
+            "name": provider.name,
+            "authenticated": provider.is_authenticated,
+            "capabilities": sorted(c.value for c in provider.capabilities),
+        }
+        for provider in (meetup, luma)
+    ]
     return {"platforms": platforms}
 
 

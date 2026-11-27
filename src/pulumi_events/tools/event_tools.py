@@ -40,29 +40,33 @@ def _normalize_start_datetime(value: str, *, target_timezone: str | None = None)
     Raises:
         ToolError: if the string is not valid ISO 8601, or has no timezone
             offset (naive datetime).
+
     """
     try:
         dt = datetime.fromisoformat(value)
     except (TypeError, ValueError) as exc:
-        raise ToolError(
+        msg = (
             f"start_date_time is not valid ISO 8601: {value!r}. "
             "Expected e.g. '2026-04-15T11:00:00-05:00' or '2026-04-15T16:00:00Z'."
-        ) from exc
+        )
+        raise ToolError(msg) from exc
     if dt.tzinfo is None:
-        raise ToolError(
+        msg = (
             f"start_date_time {value!r} has no timezone offset. "
             "Naive datetimes are ambiguous and can propagate incorrectly to "
             "Pro network sub-groups. Include an explicit offset "
             "(e.g. '2026-04-15T11:00:00-05:00') or 'Z' for UTC."
         )
+        raise ToolError(msg)
     if target_timezone is not None:
         try:
             tz = ZoneInfo(target_timezone)
         except KeyError as exc:
-            raise ToolError(
+            msg = (
                 f"Unknown timezone {target_timezone!r}. "
                 "Use an IANA timezone like 'US/Central' or 'Europe/Berlin'."
-            ) from exc
+            )
+            raise ToolError(msg) from exc
         local_dt = dt.astimezone(tz)
         result = local_dt.strftime("%Y-%m-%dT%H:%M:%S")
         logger.debug("Normalized %r → %r (wall-clock in %s)", value, result, target_timezone)
@@ -88,22 +92,25 @@ def _require_naive_local_datetime(value: str) -> str:
     Raises:
         ToolError: if the string is not valid ISO 8601, or includes a
             timezone offset.
+
     """
     try:
         dt = datetime.fromisoformat(value)
     except (TypeError, ValueError) as exc:
-        raise ToolError(
+        msg = (
             f"start_date_time is not valid ISO 8601: {value!r}. "
             "For edit, use naive local wall-clock form e.g. '2026-05-13T18:00'."
-        ) from exc
+        )
+        raise ToolError(msg) from exc
     if dt.tzinfo is not None:
-        raise ToolError(
+        msg = (
             f"start_date_time {value!r} has a timezone offset, but Meetup's "
             "EditEventInput requires naive local wall-clock form interpreted "
             "in the event's group timezone. Use e.g. '2026-05-13T18:00' "
             "(naive Berlin time) instead of '2026-05-13T16:00:00Z' or "
             "'2026-05-13T18:00:00+02:00'."
         )
+        raise ToolError(msg)
     return value
 
 
@@ -118,14 +125,16 @@ def _require_network_timezone(
     Raises:
         ToolError: if ``pro_network_urlname`` is set but
             ``pro_network_timezone`` is not.
+
     """
     if pro_network_urlname is not None and pro_network_timezone is None:
-        raise ToolError(
+        msg = (
             "pro_network_timezone is required when creating a Pro network event "
             "(e.g. 'US/Central', 'Europe/Berlin', 'UTC'). Without it, Meetup "
             "may re-interpret the start time per sub-group and produce "
             "different UTC moments across the network."
         )
+        raise ToolError(msg)
 
 
 @mcp.tool(
@@ -177,6 +186,7 @@ async def meetup_get_event(
 
     Args:
         event_id: The Meetup event ID (numeric string).
+
     """
     await ctx.info(f"Fetching Meetup event {event_id}...")
     return await provider.get_event(event_id)
@@ -224,6 +234,7 @@ async def meetup_list_group_events(
         status: Filter by event status. One of: DRAFT, ACTIVE, PAST,
             CANCELLED, PENDING. Defaults to all statuses.
         limit: Maximum total number of events to return.
+
     """
     status_label = status or "all"
     status_list = [status] if status is not None else None
@@ -246,7 +257,7 @@ async def meetup_list_group_events(
     },
 )
 @handle_provider_errors
-async def meetup_create_event(
+async def meetup_create_event(  # noqa: C901, PLR0912  # flat optional-field mapping; signature is the MCP API
     group_urlname: str,
     title: str,
     description: str,
@@ -268,7 +279,9 @@ async def meetup_create_event(
     featured_image_url: str | None = None,
     provider: MeetupProvider = Depends(get_meetup_provider),
 ) -> dict[str, Any]:
-    """Create a Meetup event. For Pro network events the event is created
+    """Create a Meetup event.
+
+    For Pro network events the event is created
     and published across all selected groups in a single API call.
 
     For Pro network events, provide pro_network_urlname. The tool will
@@ -332,6 +345,7 @@ async def meetup_create_event(
             downloads the image and uploads it to Meetup — use this when the
             MCP server runs remotely (e.g. on ECS). Mutually exclusive with
             ``featured_image_path``.
+
     """
     _require_network_timezone(pro_network_urlname, pro_network_timezone)
     normalized_start = _normalize_start_datetime(
@@ -339,7 +353,8 @@ async def meetup_create_event(
     )
 
     if featured_image_path is not None and featured_image_url is not None:
-        raise ToolError("Provide either featured_image_path or featured_image_url, not both.")
+        msg = "Provide either featured_image_path or featured_image_url, not both."
+        raise ToolError(msg)
 
     input_data: dict[str, Any] = {
         "groupUrlname": group_urlname,
@@ -389,7 +404,8 @@ async def meetup_create_event(
             try:
                 temp_image = await download_image_to_temp(featured_image_url)
             except (ValueError, httpx.HTTPError) as exc:
-                raise ToolError(f"Failed to download featured_image_url: {exc}") from exc
+                msg = f"Failed to download featured_image_url: {exc}"
+                raise ToolError(msg) from exc
             image_path: Path | None = temp_image
         elif featured_image_path is not None:
             image_path = Path(featured_image_path)
@@ -404,8 +420,7 @@ async def meetup_create_event(
             )
             input_data["featuredPhotoId"] = int(photo_id)
 
-        event = await provider.create_event(**input_data)
-        return event
+        return await provider.create_event(**input_data)
     finally:
         if temp_image is not None:
             temp_image.unlink(missing_ok=True)
@@ -427,7 +442,7 @@ async def meetup_create_event(
     },
 )
 @handle_provider_errors
-async def meetup_edit_event(
+async def meetup_edit_event(  # noqa: C901, PLR0912, PLR0915  # flat optional-field mapping; signature is the MCP API
     event_id: str,
     ctx: Context,
     group_urlname: str | None = None,
@@ -472,9 +487,11 @@ async def meetup_edit_event(
             downloads the image and uploads it to Meetup — use this when the
             MCP server runs remotely (e.g. on ECS). Requires ``group_urlname``.
             Mutually exclusive with ``featured_image_path``.
+
     """
     if featured_image_path is not None and featured_image_url is not None:
-        raise ToolError("Provide either featured_image_path or featured_image_url, not both.")
+        msg = "Provide either featured_image_path or featured_image_url, not both."
+        raise ToolError(msg)
 
     kwargs: dict[str, Any] = {}
     if title is not None:
@@ -503,17 +520,19 @@ async def meetup_edit_event(
     try:
         if image_requested:
             if group_urlname is None:
-                raise ToolError(
+                msg = (
                     "group_urlname is required when setting featured_image_path "
                     "or featured_image_url"
                 )
+                raise ToolError(msg)
             await ctx.report_progress(0, total=2)
             if featured_image_url is not None:
                 await ctx.info(f"Downloading featured image from {featured_image_url}...")
                 try:
                     temp_image = await download_image_to_temp(featured_image_url)
                 except (ValueError, httpx.HTTPError) as exc:
-                    raise ToolError(f"Failed to download featured_image_url: {exc}") from exc
+                    msg = f"Failed to download featured_image_url: {exc}"
+                    raise ToolError(msg) from exc
                 image_path = temp_image
             else:
                 assert featured_image_path is not None  # noqa: S101 — narrowed by image_requested
@@ -554,6 +573,7 @@ async def meetup_event_action(
     Args:
         event_id: The event ID.
         action: One of: delete, publish, announce, close_rsvps, open_rsvps.
+
     """
     await ctx.info(f"Performing '{action}' on event {event_id}...")
     return await provider.event_action(event_id, action)

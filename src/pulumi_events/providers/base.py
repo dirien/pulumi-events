@@ -36,34 +36,49 @@ class EventProvider(Protocol):
     """Interface that every event-platform adapter must implement."""
 
     @property
-    def name(self) -> str: ...
+    def name(self) -> str:
+        """Return the provider name."""
 
     @property
-    def capabilities(self) -> set[ProviderCapability]: ...
+    def capabilities(self) -> set[ProviderCapability]:
+        """Return the capabilities this provider supports."""
 
     @property
-    def is_authenticated(self) -> bool: ...
+    def is_authenticated(self) -> bool:
+        """Return whether credentials are configured."""
 
-    async def get_self(self) -> dict[str, Any]: ...
+    async def get_self(self) -> dict[str, Any]:
+        """Return the authenticated user profile."""
 
-    async def search_events(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def search_events(self, **kwargs: Any) -> dict[str, Any]:
+        """Search events."""
 
-    async def search_groups(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def search_groups(self, **kwargs: Any) -> dict[str, Any]:
+        """Search groups."""
 
-    async def list_my_groups(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def list_my_groups(self, **kwargs: Any) -> dict[str, Any]:
+        """List groups the authenticated user belongs to."""
 
-    async def get_group(self, urlname: str) -> dict[str, Any]: ...
+    async def get_group(self, urlname: str) -> dict[str, Any]:
+        """Return a group by URL name."""
 
-    async def get_event(self, event_id: str) -> dict[str, Any]: ...
+    async def get_event(self, event_id: str) -> dict[str, Any]:
+        """Return an event by ID."""
 
-    async def create_event(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def create_event(self, **kwargs: Any) -> dict[str, Any]:
+        """Create an event."""
 
-    async def edit_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]: ...
+    async def edit_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]:
+        """Edit an event."""
 
-    async def event_action(self, event_id: str, action: str) -> dict[str, Any]: ...
+    async def event_action(self, event_id: str, action: str) -> dict[str, Any]:
+        """Apply a lifecycle action to an event."""
 
-    async def create_venue(self, **kwargs: Any) -> dict[str, Any]: ...
+    async def create_venue(self, **kwargs: Any) -> dict[str, Any]:
+        """Create a venue."""
 
-    async def network_search(self, network_urlname: str, **kwargs: Any) -> dict[str, Any]: ...
+    async def network_search(self, network_urlname: str, **kwargs: Any) -> dict[str, Any]:
+        """Search events across a Pro network."""
 
-    async def get_network(self, urlname: str) -> dict[str, Any]: ...
+    async def get_network(self, urlname: str) -> dict[str, Any]:
+        """Return a Pro network by URL name."""

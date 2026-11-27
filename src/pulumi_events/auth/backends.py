@@ -7,9 +7,10 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from pydantic import SecretStr
+if TYPE_CHECKING:
+    from pydantic import SecretStr
 
 __all__ = ["EnvTokenBackend", "FileTokenBackend", "TokenBackend"]
 
@@ -33,9 +34,11 @@ class FileTokenBackend:
     """Read/write token JSON to a local file (default for local dev)."""
 
     def __init__(self, cache_file: Path) -> None:
+        """Initialise the instance."""
         self._cache_file = cache_file
 
     def load(self) -> dict[str, object] | None:
+        """Load the cached token data, or None if absent."""
         if self._cache_file.exists():
             try:
                 return json.loads(self._cache_file.read_text())
@@ -44,6 +47,7 @@ class FileTokenBackend:
         return None
 
     def save(self, data: dict[str, object]) -> None:
+        """Persist the token data."""
         path = self._cache_file
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(data, indent=2)
@@ -69,10 +73,12 @@ class EnvTokenBackend:
     """
 
     def __init__(self, token_json: SecretStr) -> None:
+        """Initialise the instance."""
         self._initial = token_json
         self._in_memory: dict[str, object] | None = None
 
     def load(self) -> dict[str, object] | None:
+        """Load the cached token data, or None if absent."""
         if self._in_memory is not None:
             return self._in_memory
         raw = self._initial.get_secret_value()
@@ -85,4 +91,5 @@ class EnvTokenBackend:
             return None
 
     def save(self, data: dict[str, object]) -> None:
+        """Persist the token data."""
         self._in_memory = data

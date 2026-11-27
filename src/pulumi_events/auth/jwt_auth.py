@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import time
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
-import httpx
 import jwt
 
 from pulumi_events.exceptions import AuthenticationError
 
 if TYPE_CHECKING:
+    import httpx
+
     from pulumi_events.settings import Settings
 
 __all__ = ["authenticate_jwt"]
@@ -44,7 +46,7 @@ async def authenticate_jwt(settings: Settings, http: httpx.AsyncClient) -> dict:
             "assertion": signed_jwt,
         },
     )
-    if resp.status_code != 200:
+    if resp.status_code != HTTPStatus.OK:
         msg = f"Meetup JWT auth failed ({resp.status_code}): {resp.text}"
         raise AuthenticationError(msg)
 

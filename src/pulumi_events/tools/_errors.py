@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.exceptions import ToolError
 
 from pulumi_events.exceptions import AuthenticationError, ProviderError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 
 def handle_provider_errors(
@@ -27,7 +29,8 @@ def handle_provider_errors(
         try:
             return await fn(*args, **kwargs)
         except AuthenticationError as exc:
-            raise ToolError(f"Authentication required: {exc}") from exc
+            msg = f"Authentication required: {exc}"
+            raise ToolError(msg) from exc
         except ProviderError as exc:
             raise ToolError(str(exc)) from exc
         except ValueError as exc:

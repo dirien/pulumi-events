@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from pulumi_events.exceptions import ProviderError
 from pulumi_events.providers.base import ProviderCapability
-from pulumi_events.providers.luma.client import LumaClient
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pulumi_events.providers.luma.client import LumaClient
 
 __all__ = ["LumaProvider"]
 
@@ -56,6 +60,7 @@ class LumaProvider:
     """Luma event-platform adapter."""
 
     def __init__(self, client: LumaClient) -> None:
+        """Initialise the instance."""
         self._client = client
 
     # ------------------------------------------------------------------
@@ -64,10 +69,12 @@ class LumaProvider:
 
     @property
     def name(self) -> str:
+        """Return the provider name."""
         return "luma"
 
     @property
     def capabilities(self) -> set[ProviderCapability]:
+        """Return the capabilities this provider supports."""
         return {
             ProviderCapability.LIST_EVENTS,
             ProviderCapability.CREATE_EVENT,
@@ -81,6 +88,7 @@ class LumaProvider:
 
     @property
     def is_authenticated(self) -> bool:
+        """Return whether credentials are configured."""
         return self._client.is_authenticated
 
     # ------------------------------------------------------------------
@@ -88,11 +96,12 @@ class LumaProvider:
     # ------------------------------------------------------------------
 
     async def get_self(self) -> dict[str, Any]:
+        """Return the authenticated user profile."""
         data = await self._client.get("/user/get-self")
         return data.get("user", data)
 
     # ------------------------------------------------------------------
-    # Events (calendar-level)
+    # Calendar-level events
     # ------------------------------------------------------------------
 
     async def list_events(
@@ -129,6 +138,7 @@ class LumaProvider:
     # ------------------------------------------------------------------
 
     async def get_event(self, event_id: str) -> dict[str, Any]:
+        """Return an event by ID."""
         data = await self._client.get("/event/get", {"api_id": event_id})
         event = data.get("event", data)
         # The API returns hosts as a sibling of the event object; merge them in
@@ -144,10 +154,12 @@ class LumaProvider:
         return await self._client.upload_image(file_path)
 
     async def create_event(self, **kwargs: Any) -> dict[str, Any]:
+        """Create an event."""
         data = await self._client.post("/events/create", kwargs)
         return data.get("event", data)
 
     async def update_event(self, event_id: str, **kwargs: Any) -> dict[str, Any]:
+        """Update an event."""
         kwargs["event_id"] = event_id
         data = await self._client.post("/events/update", kwargs)
         return data.get("event", data)
@@ -158,8 +170,6 @@ class LumaProvider:
         token_data = await self._client.post("/event/cancel/request", {"event_id": event_id})
         cancellation_token = token_data.get("cancellation_token")
         if not cancellation_token:
-            from pulumi_events.exceptions import ProviderError
-
             msg = f"Luma cancel/request did not return a token: {token_data}"
             raise ProviderError(msg)
 
@@ -187,7 +197,7 @@ class LumaProvider:
         return await self._client.post("/events/ticket-types/update", kwargs)
 
     async def set_require_approval(
-        self, event_id: str, require_approval: bool
+        self, event_id: str, *, require_approval: bool
     ) -> list[dict[str, Any]]:
         """Set require_approval on every ticket type of an event.
 
@@ -201,15 +211,16 @@ class LumaProvider:
         entries = await self.list_ticket_types(event_id)
         results: list[dict[str, Any]] = []
         for entry in entries:
-            if entry.get("require_approval") != require_approval:
-                entry = await self.update_ticket_type(
-                    entry["id"], require_approval=require_approval
-                )
+            updated = (
+                entry
+                if entry.get("require_approval") == require_approval
+                else await self.update_ticket_type(entry["id"], require_approval=require_approval)
+            )
             results.append(
                 {
-                    "id": entry.get("id"),
-                    "name": entry.get("name"),
-                    "require_approval": entry.get("require_approval"),
+                    "id": updated.get("id"),
+                    "name": updated.get("name"),
+                    "require_approval": updated.get("require_approval"),
                 }
             )
         return results

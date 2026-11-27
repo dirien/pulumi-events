@@ -23,8 +23,7 @@ Thumbs.db
 .config/
 meetup_token.json
 
-# uv
-uv.lock
+# uv (uv.lock is committed: Delivery, the Dockerfile and Image Builder use --frozen)
 
 # Claude Code
 .claude/

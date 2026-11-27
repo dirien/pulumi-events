@@ -7,7 +7,7 @@
 
 ## Overview
 
-MCP server for managing events on **Meetup.com** and **Luma** via AI assistants. Built with FastMCP 3.x (Python ≥3.12). Exposes 27 tools + 6 resources over streamable-http transport. Provider architecture: each platform implements `EventProvider` Protocol.
+MCP server for managing events on **Meetup.com** and **Luma** via AI assistants. Built with FastMCP 4.x (Python ≥3.12, MCP spec 2026-07-28). Exposes 27 tools + 6 resources + 3 skills (`skill://<name>/SKILL.md`, extension `io.modelcontextprotocol/skills`) over streamable-http transport. Provider architecture: each platform implements `EventProvider` Protocol.
 
 ## Setup
 
@@ -93,6 +93,7 @@ src/pulumi_events/
 │   ├── meetup/          # GraphQL client, provider, models, queries
 │   └── luma/            # REST client + provider
 ├── resources/           # @mcp.resource handlers (meetup://, luma://)
+├── skills/              # <name>/SKILL.md served as skill:// (SkillsDirectoryProvider)
 └── tools/               # @mcp.tool handlers + _deps.py + _errors.py
 tests/conftest.py
 docs/getting-started.md
@@ -147,6 +148,7 @@ Then import in `server.py` at the bottom with the other tool imports.
 |------|-----|
 | Adding a new tool | `tools/`, `@mcp.tool`, import in `server.py` bottom |
 | Adding a new resource | `resources/`, `@mcp.resource`, import in `server.py` |
+| Adding a skill | `skills/<name>/SKILL.md`, folder name == frontmatter `name`, with `name` + `description`; picked up automatically |
 | Adding a new platform | `providers/<name>/` with `client.py` + `provider.py` implementing `EventProvider` |
 | Read-only tool | `annotations={"readOnlyHint": True}` |
 | Mutation tool | Omit readOnlyHint, never add to cache list |

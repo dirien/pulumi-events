@@ -42,6 +42,7 @@ async def meetup_create_venue(
         state: State/province (if applicable).
         lat: Latitude.
         lon: Longitude.
+
     """
     input_data: dict[str, Any] = {
         "groupUrlname": group_urlname,

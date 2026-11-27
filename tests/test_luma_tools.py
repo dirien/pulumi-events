@@ -52,7 +52,7 @@ class StubProvider:
         return {"api_id": event_id}
 
     async def set_require_approval(
-        self, event_id: str, require_approval: bool
+        self, event_id: str, *, require_approval: bool
     ) -> list[dict[str, Any]]:
         self.require_approval_calls.append((event_id, require_approval))
         return [{"id": "ttype-1", "name": "Standard", "require_approval": require_approval}]
@@ -62,7 +62,7 @@ def wire_provider(
     captured: list[httpx.Request],
     responses: dict[str, Any] | None = None,
 ) -> LumaProvider:
-    """Provider backed by a MockTransport that routes responses by URL path."""
+    """Build a provider backed by a MockTransport that routes responses by URL path."""
     routes = {
         "/v1/event/get": {"event": {"api_id": "evt-123"}, "hosts": []},
         **(responses or {}),

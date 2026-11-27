@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,7 +67,8 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _validate_https_url(cls, v: str) -> str:
-        if not v.startswith("https://"):
+        parts = urlsplit(v)
+        if parts.scheme != "https" or not parts.netloc:
             msg = f"Endpoint URL must start with https://, got: {v!r}"
             raise ValueError(msg)
         return v
